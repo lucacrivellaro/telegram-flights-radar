@@ -32,7 +32,7 @@ HELP_TEXT = """<b>Radar voli — comandi</b>
 /help — questo messaggio
 
 Ogni giorno alle {daily_time} ricevi automaticamente le migliori offerte
-da {origins}: sola andata e andata/ritorno con soggiorni di
+da {origins}: {trip_mode} con soggiorni di
 {min_nights}-{max_nights} notti (configurabili nel file .env)."""
 
 
@@ -78,6 +78,11 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         HELP_TEXT.format(
             daily_time=config.daily_time,
             origins=", ".join(config.origins),
+            trip_mode=(
+                "sola andata e andata/ritorno"
+                if config.search_one_way
+                else "andata/ritorno"
+            ),
             min_nights=config.min_trip_nights,
             max_nights=config.max_trip_nights,
         )

@@ -93,13 +93,14 @@ class DealEngine:
         offers: list[Offer] = []
         for client in self._clients():
             for origin in self.config.origins:
-                try:
-                    found = client.search(origin, date_from, date_to)
-                    offers.extend(found)
-                except Exception as exc:  # noqa: BLE001 - un client rotto non ferma gli altri
-                    msg = f"{client.name} da {origin} (solo andata): {exc}"
-                    logger.error("Ricerca fallita: %s", msg)
-                    result.errors.append(msg)
+                if self.config.search_one_way:
+                    try:
+                        found = client.search(origin, date_from, date_to)
+                        offers.extend(found)
+                    except Exception as exc:  # noqa: BLE001 - un client rotto non ferma gli altri
+                        msg = f"{client.name} da {origin} (solo andata): {exc}"
+                        logger.error("Ricerca fallita: %s", msg)
+                        result.errors.append(msg)
                 try:
                     found = client.search_round_trip(
                         origin,

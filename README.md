@@ -11,10 +11,11 @@ offerte, con link di prenotazione.
 - **Travelpayouts/Aviasales Data API** (gratuita, con token): prezzi in cache
   di tutte le compagnie, inclusi itinerari con 1-2 scali. Nota: l'API gratuita
   indica il *numero* di scali e la durata totale, ma non gli aeroporti di scalo.
-- Il bot cerca sia **sola andata** sia **andata/ritorno** (soggiorni da
-  `MIN_TRIP_NIGHTS` a `MAX_TRIP_NIGHTS` notti, default 3-10): per gli A/R conta
-  il prezzo totale della combinazione, e la stessa destinazione può comparire
-  nel messaggio con entrambe le tipologie.
+- Il bot cerca offerte **andata/ritorno** (soggiorni da `MIN_TRIP_NIGHTS` a
+  `MAX_TRIP_NIGHTS` notti, default 3-10): conta il prezzo totale della
+  combinazione. Con `SEARCH_ONE_WAY=true` cerca in parallelo anche le tariffe
+  di **sola andata**, e la stessa destinazione può comparire nel messaggio con
+  entrambe le tipologie.
 - Un'offerta è segnalata se il prezzo è **sotto la soglia assoluta** della sua
   fascia (Europa / extra-Europa, con soglie separate per sola andata e A/R)
   **oppure** sotto la media storica della rotta di almeno il
@@ -153,6 +154,7 @@ file `.env`:
 | `SEARCH_DAYS_AHEAD` | Finestra di ricerca: da domani a N giorni avanti (default `45`). |
 | `DESTINATIONS_WHITELIST` | Destinazioni ammesse, CSV IATA (vuota = tutte). |
 | `DESTINATIONS_BLACKLIST` | Destinazioni escluse, CSV IATA. |
+| `SEARCH_ONE_WAY` | `true` per cercare anche le tariffe di sola andata (default `false`: solo A/R). |
 | `MIN_TRIP_NIGHTS` | Notti minime di soggiorno per le ricerche A/R (default `3`). |
 | `MAX_TRIP_NIGHTS` | Notti massime di soggiorno per le ricerche A/R (default `10`). |
 | `PRICE_THRESHOLD_EUROPE` | Soglia assoluta in € per le mete europee, sola andata (default `40`). |

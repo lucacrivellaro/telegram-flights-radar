@@ -56,6 +56,8 @@ Obbligatorie: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`. Consigliata:
 `DESTINATIONS_WHITELIST/BLACKLIST`, `PRICE_THRESHOLD_EUROPE/EXTRA`,
 `PRICE_THRESHOLD_EUROPE_RT/EXTRA_RT` (soglie A/R, prezzo totale),
 `MIN/MAX_TRIP_NIGHTS` (range soggiorno A/R, default 3-10),
+`SEARCH_ONE_WAY` (default false: si cercano solo A/R; true riattiva anche
+la sola andata),
 `RT_SCORE_WEIGHT` (peso A/R nel ranking, default 0.75: <1 favorisce le A/R),
 `DISCOUNT_THRESHOLD_PCT`, `MIN_HISTORY_SAMPLES`, `TOP_N`,
 `RESEND_COOLDOWN_DAYS`, `DAILY_TIME`, `TIMEZONE`, `DB_PATH`.

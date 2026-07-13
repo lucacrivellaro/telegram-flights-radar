@@ -27,6 +27,7 @@ class Config:
     threshold_extra_rt: float = 550.0
     min_trip_nights: int = 3
     max_trip_nights: int = 10
+    search_one_way: bool = False
     rt_score_weight: float = 0.75
     discount_pct: float = 30.0
     min_history_samples: int = 5
@@ -53,6 +54,8 @@ class Config:
             threshold_extra_rt=float(os.getenv("PRICE_THRESHOLD_EXTRA_RT", "550")),
             min_trip_nights=int(os.getenv("MIN_TRIP_NIGHTS", "3")),
             max_trip_nights=int(os.getenv("MAX_TRIP_NIGHTS", "10")),
+            search_one_way=os.getenv("SEARCH_ONE_WAY", "false").strip().lower()
+            in {"1", "true", "yes", "si", "sì"},
             rt_score_weight=float(os.getenv("RT_SCORE_WEIGHT", "0.75")),
             discount_pct=float(os.getenv("DISCOUNT_THRESHOLD_PCT", "30")),
             min_history_samples=int(os.getenv("MIN_HISTORY_SAMPLES", "5")),
