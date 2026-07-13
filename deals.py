@@ -45,12 +45,23 @@ class DealEngine:
 
     # --- impostazioni effettive (DB sovrascrive .env) ---------------------
 
-    def thresholds(self) -> tuple[float, float, float]:
+    def thresholds(self) -> tuple[float, float, float, float, float]:
         return (
             self.storage.get_setting("threshold_europe", self.config.threshold_europe),
             self.storage.get_setting("threshold_extra", self.config.threshold_extra),
+            self.storage.get_setting(
+                "threshold_europe_rt", self.config.threshold_europe_rt
+            ),
+            self.storage.get_setting(
+                "threshold_extra_rt", self.config.threshold_extra_rt
+            ),
             self.storage.get_setting("discount_pct", self.config.discount_pct),
         )
+
+    def rt_score_weight(self) -> float:
+        """Moltiplicatore dello score delle offerte A/R nel ranking:
+        1 = neutro, più basso = A/R favorite rispetto ai solo-andata."""
+        return self.storage.get_setting("rt_score_weight", self.config.rt_score_weight)
 
     def destination_lists(self) -> tuple[list[str], list[str]]:
         return (
@@ -86,7 +97,20 @@ class DealEngine:
                     found = client.search(origin, date_from, date_to)
                     offers.extend(found)
                 except Exception as exc:  # noqa: BLE001 - un client rotto non ferma gli altri
-                    msg = f"{client.name} da {origin}: {exc}"
+                    msg = f"{client.name} da {origin} (solo andata): {exc}"
+                    logger.error("Ricerca fallita: %s", msg)
+                    result.errors.append(msg)
+                try:
+                    found = client.search_round_trip(
+                        origin,
+                        date_from,
+                        date_to,
+                        self.config.min_trip_nights,
+                        self.config.max_trip_nights,
+                    )
+                    offers.extend(found)
+                except Exception as exc:  # noqa: BLE001
+                    msg = f"{client.name} da {origin} (A/R): {exc}"
                     logger.error("Ricerca fallita: %s", msg)
                     result.errors.append(msg)
 
@@ -104,10 +128,13 @@ class DealEngine:
     # --- selezione ----------------------------------------------------------
 
     def _select_deals(self, offers: list[Offer]) -> list[EvaluatedOffer]:
-        thr_europe, thr_extra, discount_pct = self.thresholds()
+        thresholds = self.thresholds()
+        rt_weight = self.rt_score_weight()
         whitelist, blacklist = self.destination_lists()
 
-        evaluated: dict[str, EvaluatedOffer] = {}
+        # una sola offerta per (destinazione, tipo viaggio): la stessa meta può
+        # comparire sia come solo-andata sia come andata/ritorno
+        evaluated: dict[tuple[str, str], EvaluatedOffer] = {}
         for offer in offers:
             dest = offer.destination.upper()
             if dest in blacklist:
@@ -115,25 +142,39 @@ class DealEngine:
             if whitelist and dest not in whitelist:
                 continue
 
-            ev = self._evaluate(offer, thr_europe, thr_extra, discount_pct)
+            ev = self._evaluate(offer, *thresholds, rt_weight)
             if ev is None:
                 continue
             if self._recently_sent(offer):
                 continue
 
-            # una sola offerta per destinazione: tieni la più conveniente
-            current = evaluated.get(dest)
+            key = (dest, offer.trip_type)
+            current = evaluated.get(key)
             if current is None or ev.score < current.score:
-                evaluated[dest] = ev
+                evaluated[key] = ev
 
         ranked = sorted(evaluated.values(), key=lambda e: e.score)
         return ranked[: self.config.top_n]
 
     def _evaluate(
-        self, offer: Offer, thr_europe: float, thr_extra: float, discount_pct: float
+        self,
+        offer: Offer,
+        thr_europe: float,
+        thr_extra: float,
+        thr_europe_rt: float,
+        thr_extra_rt: float,
+        discount_pct: float,
+        rt_weight: float,
     ) -> EvaluatedOffer | None:
-        threshold = thr_europe if is_short_haul(offer.destination) else thr_extra
-        avg, samples = self.storage.route_average(offer.origin, offer.destination)
+        if offer.one_way:
+            threshold = thr_europe if is_short_haul(offer.destination) else thr_extra
+        else:
+            threshold = (
+                thr_europe_rt if is_short_haul(offer.destination) else thr_extra_rt
+            )
+        avg, samples = self.storage.route_average(
+            offer.origin, offer.destination, offer.trip_type
+        )
         has_history = samples >= self.config.min_history_samples and avg
 
         reasons = []
@@ -146,6 +187,8 @@ class DealEngine:
             return None
 
         score = offer.price / avg if has_history else offer.price / threshold
+        if not offer.one_way:
+            score *= rt_weight
         return EvaluatedOffer(
             offer=offer,
             score=score,

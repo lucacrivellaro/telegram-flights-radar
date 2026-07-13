@@ -27,11 +27,13 @@ HELP_TEXT = """<b>Radar voli — comandi</b>
 /destinazioni block|unblock XXX — gestisci la blacklist
 /destinazioni reset — torna ai valori del file .env
 /soglia — mostra le soglie attuali
-/soglia europa|extra|sconto N — imposta soglia (€ o %)
+/soglia europa|europa_ar|extra|extra_ar|sconto N — imposta soglia (€ o %)
+/soglia peso_ar N — peso delle A/R nel ranking (1 = neutro, &lt;1 = favorite)
 /help — questo messaggio
 
 Ogni giorno alle {daily_time} ricevi automaticamente le migliori offerte
-da {origins}."""
+da {origins}: sola andata e andata/ritorno con soggiorni di
+{min_nights}-{max_nights} notti (configurabili nel file .env)."""
 
 
 def build_application(config: Config, engine: DealEngine) -> Application:
@@ -74,7 +76,10 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     config: Config = context.bot_data["config"]
     await update.message.reply_html(
         HELP_TEXT.format(
-            daily_time=config.daily_time, origins=", ".join(config.origins)
+            daily_time=config.daily_time,
+            origins=", ".join(config.origins),
+            min_nights=config.min_trip_nights,
+            max_nights=config.max_trip_nights,
         )
     )
 
@@ -140,29 +145,44 @@ async def cmd_soglia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     engine: DealEngine = context.bot_data["engine"]
     args = context.args
 
+    usage = "Uso: /soglia europa|europa_ar|extra|extra_ar|sconto|peso_ar NUMERO"
+
     if not args:
-        thr_e, thr_x, disc = engine.thresholds()
+        thr_e, thr_x, thr_e_rt, thr_x_rt, disc = engine.thresholds()
+        rt_weight = engine.rt_score_weight()
         await update.message.reply_html(
             f"<b>Soglie attuali</b>\n"
-            f"• Europa/corto raggio: {thr_e:.0f} €\n"
-            f"• Extra-Europa: {thr_x:.0f} €\n"
-            f"• Sconto minimo vs media storica: {disc:.0f}%\n\n"
-            "Modifica con: /soglia europa 45 · /soglia extra 250 · /soglia sconto 30"
+            f"• Europa/corto raggio, solo andata: {thr_e:.0f} €\n"
+            f"• Europa/corto raggio, A/R: {thr_e_rt:.0f} €\n"
+            f"• Extra-Europa, solo andata: {thr_x:.0f} €\n"
+            f"• Extra-Europa, A/R: {thr_x_rt:.0f} €\n"
+            f"• Sconto minimo vs media storica: {disc:.0f}%\n"
+            f"• Peso A/R nel ranking: {rt_weight:g} (1 = neutro, più basso = A/R favorite)\n\n"
+            "Modifica con: /soglia europa 45 · /soglia europa_ar 70 · "
+            "/soglia extra 250 · /soglia extra_ar 500 · /soglia sconto 30 · "
+            "/soglia peso_ar 0.75"
         )
         return
 
     if len(args) != 2:
-        await update.message.reply_text("Uso: /soglia europa|extra|sconto NUMERO")
+        await update.message.reply_text(usage)
         return
 
-    key_map = {"europa": "threshold_europe", "extra": "threshold_extra", "sconto": "discount_pct"}
+    key_map = {
+        "europa": "threshold_europe",
+        "extra": "threshold_extra",
+        "europa_ar": "threshold_europe_rt",
+        "extra_ar": "threshold_extra_rt",
+        "sconto": "discount_pct",
+        "peso_ar": "rt_score_weight",
+    }
     key = key_map.get(args[0].lower())
     try:
         value = float(args[1].replace(",", "."))
     except ValueError:
         value = None
     if key is None or value is None or value <= 0:
-        await update.message.reply_text("Uso: /soglia europa|extra|sconto NUMERO")
+        await update.message.reply_text(usage)
         return
 
     engine.storage.set_setting(key, value)

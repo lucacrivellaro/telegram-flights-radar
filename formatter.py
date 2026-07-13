@@ -31,13 +31,18 @@ def _fmt_offer(index: int, ev: EvaluatedOffer) -> str:
         route = f"🔁 {o.stops} scal{'o' if o.stops == 1 else 'i'}{_fmt_duration(o.duration_minutes)}"
 
     if o.return_date:
-        dates = f"{_fmt_date(o.depart_date)} → {_fmt_date(o.return_date)} (A/R)"
+        trip = "🔄 Andata/ritorno"
+        if o.nights:
+            trip += f" · {o.nights} nott{'e' if o.nights == 1 else 'i'}"
+        dates = f"{_fmt_date(o.depart_date)} → {_fmt_date(o.return_date)}"
     else:
-        dates = f"{_fmt_date(o.depart_date)} (sola andata)"
+        trip = "✈️ Solo andata"
+        dates = _fmt_date(o.depart_date)
 
     lines = [
         f"<b>{index}. {o.origin} → {city} ({o.destination})</b> — <b>{o.price:.2f} €</b>",
-        f"   {route} · {escape(o.airline)} · {dates}",
+        f"   {trip} · {dates}",
+        f"   {route} · {escape(o.airline)}",
         f"   💡 {escape(ev.reason)}",
         f"   👉 <a href=\"{o.link}\">Prenota</a>",
     ]

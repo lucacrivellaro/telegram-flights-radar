@@ -31,6 +31,16 @@ class Offer:
         return self.return_date is None
 
     @property
+    def trip_type(self) -> str:
+        return "one_way" if self.one_way else "round_trip"
+
+    @property
+    def nights(self) -> int | None:
+        if self.depart_date and self.return_date:
+            return (self.return_date - self.depart_date).days
+        return None
+
+    @property
     def offer_hash(self) -> str:
         """Identità dell'offerta ai fini dedup (il prezzo è escluso di proposito:
         così un ribasso sulla stessa offerta può essere re-inviato)."""
@@ -48,6 +58,19 @@ class FlightClient(Protocol):
     name: str
 
     def search(self, origin: str, date_from: date, date_to: date) -> list[Offer]:
-        """Cerca le tariffe più economiche da `origin` verso qualsiasi
-        destinazione con partenza nell'intervallo dato."""
+        """Cerca le tariffe più economiche di sola andata da `origin` verso
+        qualsiasi destinazione con partenza nell'intervallo dato."""
+        ...
+
+    def search_round_trip(
+        self,
+        origin: str,
+        date_from: date,
+        date_to: date,
+        min_nights: int,
+        max_nights: int,
+    ) -> list[Offer]:
+        """Cerca le combinazioni andata/ritorno più economiche da `origin`
+        (prezzo totale) con partenza nell'intervallo dato e soggiorno
+        compreso tra min_nights e max_nights notti."""
         ...

@@ -26,13 +26,35 @@ class TravelpayoutsClient:
         self.marker = marker
 
     def search(self, origin: str, date_from: date, date_to: date) -> list[Offer]:
+        offers = self._search(origin, date_from, date_to, one_way=True)
+        # difensivo: con one_way=true non dovrebbero esserci ritorni
+        return [o for o in offers if o.return_date is None]
+
+    def search_round_trip(
+        self,
+        origin: str,
+        date_from: date,
+        date_to: date,
+        min_nights: int,
+        max_nights: int,
+    ) -> list[Offer]:
+        offers = self._search(origin, date_from, date_to, one_way=False)
+        return [
+            o
+            for o in offers
+            if o.nights is not None and min_nights <= o.nights <= max_nights
+        ]
+
+    def _search(
+        self, origin: str, date_from: date, date_to: date, one_way: bool
+    ) -> list[Offer]:
         params = {
             "currency": "eur",
             "origin": origin,
             "period_type": "year",
             "limit": 1000,
             "sorting": "price",
-            "one_way": "false",
+            "one_way": "true" if one_way else "false",
         }
         resp = httpx.get(
             _URL,
@@ -45,7 +67,12 @@ class TravelpayoutsClient:
         if not payload.get("success", False):
             raise RuntimeError(f"Travelpayouts error: {payload.get('error')}")
         rows = payload.get("data", [])
-        logger.info("Travelpayouts %s: %d prezzi in cache", origin, len(rows))
+        logger.info(
+            "Travelpayouts %s (%s): %d prezzi in cache",
+            origin,
+            "solo andata" if one_way else "A/R",
+            len(rows),
+        )
 
         offers = []
         for row in rows:

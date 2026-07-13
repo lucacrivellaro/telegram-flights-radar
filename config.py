@@ -23,6 +23,11 @@ class Config:
     timezone: str = "Europe/Rome"
     threshold_europe: float = 40.0
     threshold_extra: float = 300.0
+    threshold_europe_rt: float = 70.0
+    threshold_extra_rt: float = 550.0
+    min_trip_nights: int = 3
+    max_trip_nights: int = 10
+    rt_score_weight: float = 0.75
     discount_pct: float = 30.0
     min_history_samples: int = 5
     top_n: int = 8
@@ -44,6 +49,11 @@ class Config:
             timezone=os.getenv("TIMEZONE", "Europe/Rome"),
             threshold_europe=float(os.getenv("PRICE_THRESHOLD_EUROPE", "40")),
             threshold_extra=float(os.getenv("PRICE_THRESHOLD_EXTRA", "300")),
+            threshold_europe_rt=float(os.getenv("PRICE_THRESHOLD_EUROPE_RT", "70")),
+            threshold_extra_rt=float(os.getenv("PRICE_THRESHOLD_EXTRA_RT", "550")),
+            min_trip_nights=int(os.getenv("MIN_TRIP_NIGHTS", "3")),
+            max_trip_nights=int(os.getenv("MAX_TRIP_NIGHTS", "10")),
+            rt_score_weight=float(os.getenv("RT_SCORE_WEIGHT", "0.75")),
             discount_pct=float(os.getenv("DISCOUNT_THRESHOLD_PCT", "30")),
             min_history_samples=int(os.getenv("MIN_HISTORY_SAMPLES", "5")),
             top_n=int(os.getenv("TOP_N", "8")),

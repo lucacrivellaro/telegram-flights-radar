@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS price_history (
     depart_date TEXT,
     return_date TEXT,
     source TEXT,
-    found_at TEXT NOT NULL
+    found_at TEXT NOT NULL,
+    trip_type TEXT NOT NULL DEFAULT 'one_way'
 );
 CREATE INDEX IF NOT EXISTS idx_history_route ON price_history (origin, destination);
 
@@ -43,7 +44,27 @@ class Storage:
         self._lock = threading.Lock()
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            self._migrate()
             self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Migrazioni idempotenti su DB creati con schemi precedenti."""
+        cols = {row[1] for row in self._conn.execute("PRAGMA table_info(price_history)")}
+        if "trip_type" not in cols:
+            self._conn.execute(
+                "ALTER TABLE price_history"
+                " ADD COLUMN trip_type TEXT NOT NULL DEFAULT 'one_way'"
+            )
+            # backfill: le rilevazioni A/R storiche hanno già return_date valorizzato
+            self._conn.execute(
+                "UPDATE price_history SET trip_type = 'round_trip'"
+                " WHERE return_date IS NOT NULL"
+            )
+            logger.info("Migrazione: aggiunta colonna trip_type a price_history")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_history_route_type"
+            " ON price_history (origin, destination, trip_type)"
+        )
 
     # --- storico prezzi -------------------------------------------------
 
@@ -51,8 +72,8 @@ class Storage:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO price_history (origin, destination, price, stops,"
-                " depart_date, return_date, source, found_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " depart_date, return_date, source, found_at, trip_type)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     offer.origin,
                     offer.destination,
@@ -62,18 +83,25 @@ class Storage:
                     offer.return_date.isoformat() if offer.return_date else None,
                     offer.source,
                     datetime.now().isoformat(timespec="seconds"),
+                    offer.trip_type,
                 ),
             )
             self._conn.commit()
 
-    def route_average(self, origin: str, destination: str) -> tuple[float | None, int]:
-        """Media e numero di rilevazioni degli ultimi 90 giorni per la rotta."""
+    def route_average(
+        self, origin: str, destination: str, trip_type: str = "one_way"
+    ) -> tuple[float | None, int]:
+        """Media e numero di rilevazioni degli ultimi 90 giorni per la rotta.
+
+        Sola andata e andata/ritorno hanno storici separati: i prezzi non sono
+        comparabili e non devono inquinarsi a vicenda."""
         cutoff = (datetime.now() - timedelta(days=90)).isoformat(timespec="seconds")
         with self._lock:
             row = self._conn.execute(
                 "SELECT AVG(price), COUNT(*) FROM price_history"
-                " WHERE origin = ? AND destination = ? AND found_at >= ?",
-                (origin, destination, cutoff),
+                " WHERE origin = ? AND destination = ? AND trip_type = ?"
+                " AND found_at >= ?",
+                (origin, destination, trip_type, cutoff),
             ).fetchone()
         return (row[0], row[1]) if row and row[1] else (None, 0)
 
