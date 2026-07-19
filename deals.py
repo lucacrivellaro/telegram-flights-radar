@@ -5,8 +5,11 @@ Un'offerta è considerata "affare" se almeno una di queste condizioni vale:
   2. prezzo sotto la media storica della rotta di almeno `discount_pct` %,
      con almeno `min_history_samples` rilevazioni negli ultimi 90 giorni.
 
-Le offerte vengono ordinate per convenienza (rapporto prezzo/riferimento) e
-dedupplicate contro quelle già inviate di recente.
+Multi-utente: la ricerca è divisa in due fasi. `fetch_offers()` interroga le
+API una sola volta per aeroporto di partenza distinto (l'unione degli
+aeroporti di tutti gli utenti attivi), poi `select_for_user()` applica a quel
+pool le preferenze del singolo utente (aeroporti, soglie, liste, dedup).
+Le offerte vengono ordinate per convenienza (rapporto prezzo/riferimento).
 """
 
 import logging
@@ -21,6 +24,23 @@ from flights.travelpayouts import TravelpayoutsClient
 from storage import Storage
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class UserPrefs:
+    """Preferenze effettive di un utente: user_settings del DB con fallback
+    sui default del .env (Config)."""
+
+    chat_id: str
+    origins: list[str]
+    threshold_europe: float
+    threshold_extra: float
+    threshold_europe_rt: float
+    threshold_extra_rt: float
+    discount_pct: float
+    rt_score_weight: float
+    whitelist: list[str]
+    blacklist: list[str]
 
 
 @dataclass
@@ -43,33 +63,28 @@ class DealEngine:
         self.config = config
         self.storage = storage
 
-    # --- impostazioni effettive (DB sovrascrive .env) ---------------------
+    # --- preferenze effettive (user_settings sovrascrive .env) -------------
 
-    def thresholds(self) -> tuple[float, float, float, float, float]:
-        return (
-            self.storage.get_setting("threshold_europe", self.config.threshold_europe),
-            self.storage.get_setting("threshold_extra", self.config.threshold_extra),
-            self.storage.get_setting(
-                "threshold_europe_rt", self.config.threshold_europe_rt
-            ),
-            self.storage.get_setting(
-                "threshold_extra_rt", self.config.threshold_extra_rt
-            ),
-            self.storage.get_setting("discount_pct", self.config.discount_pct),
+    def prefs_for(self, chat_id: str | int) -> UserPrefs:
+        cfg = self.config
+
+        def get(key: str, default):
+            return self.storage.get_user_setting(chat_id, key, default)
+
+        return UserPrefs(
+            chat_id=str(chat_id),
+            origins=[o.upper() for o in get("origins", cfg.origins)],
+            threshold_europe=get("threshold_europe", cfg.threshold_europe),
+            threshold_extra=get("threshold_extra", cfg.threshold_extra),
+            threshold_europe_rt=get("threshold_europe_rt", cfg.threshold_europe_rt),
+            threshold_extra_rt=get("threshold_extra_rt", cfg.threshold_extra_rt),
+            discount_pct=get("discount_pct", cfg.discount_pct),
+            rt_score_weight=get("rt_score_weight", cfg.rt_score_weight),
+            whitelist=[c.upper() for c in get("whitelist", cfg.whitelist)],
+            blacklist=[c.upper() for c in get("blacklist", cfg.blacklist)],
         )
 
-    def rt_score_weight(self) -> float:
-        """Moltiplicatore dello score delle offerte A/R nel ranking:
-        1 = neutro, più basso = A/R favorite rispetto ai solo-andata."""
-        return self.storage.get_setting("rt_score_weight", self.config.rt_score_weight)
-
-    def destination_lists(self) -> tuple[list[str], list[str]]:
-        return (
-            self.storage.get_setting("whitelist", self.config.whitelist),
-            self.storage.get_setting("blacklist", self.config.blacklist),
-        )
-
-    # --- ricerca -----------------------------------------------------------
+    # --- fase 1: ricerca (condivisa fra tutti gli utenti) -------------------
 
     def _clients(self) -> list[FlightClient]:
         clients: list[FlightClient] = [RyanairClient()]
@@ -85,68 +100,97 @@ class DealEngine:
             )
         return clients
 
-    def search(self, mark_as_sent: bool = True) -> SearchResult:
-        result = SearchResult()
+    def fetch_offers(
+        self, origins: list[str]
+    ) -> tuple[list[Offer], list[tuple[str, str]]]:
+        """Interroga le API per gli aeroporti dati e registra i prezzi.
+
+        Ritorna (offerte, errori); ogni errore è (origin, messaggio) così la
+        fase di selezione può mostrare a ciascun utente solo i problemi dei
+        suoi aeroporti."""
         date_from = date.today() + timedelta(days=1)
         date_to = date.today() + timedelta(days=self.config.search_days_ahead)
 
         offers: list[Offer] = []
+        errors: list[tuple[str, str]] = []
         for client in self._clients():
-            for origin in self.config.origins:
+            for origin in origins:
                 if self.config.search_one_way:
                     try:
-                        found = client.search(origin, date_from, date_to)
-                        offers.extend(found)
+                        offers.extend(client.search(origin, date_from, date_to))
                     except Exception as exc:  # noqa: BLE001 - un client rotto non ferma gli altri
                         msg = f"{client.name} da {origin} (solo andata): {exc}"
                         logger.error("Ricerca fallita: %s", msg)
-                        result.errors.append(msg)
+                        errors.append((origin, msg))
                 try:
-                    found = client.search_round_trip(
-                        origin,
-                        date_from,
-                        date_to,
-                        self.config.min_trip_nights,
-                        self.config.max_trip_nights,
+                    offers.extend(
+                        client.search_round_trip(
+                            origin,
+                            date_from,
+                            date_to,
+                            self.config.min_trip_nights,
+                            self.config.max_trip_nights,
+                        )
                     )
-                    offers.extend(found)
                 except Exception as exc:  # noqa: BLE001
                     msg = f"{client.name} da {origin} (A/R): {exc}"
                     logger.error("Ricerca fallita: %s", msg)
-                    result.errors.append(msg)
+                    errors.append((origin, msg))
 
-        result.total_offers = len(offers)
         for offer in offers:
             self.storage.record_price(offer)
+        return offers, errors
 
-        deals = self._select_deals(offers)
+    # --- fase 2: selezione per utente ---------------------------------------
+
+    def select_for_user(
+        self,
+        prefs: UserPrefs,
+        offers: list[Offer],
+        errors: list[tuple[str, str]],
+        mark_as_sent: bool = True,
+    ) -> SearchResult:
+        result = SearchResult()
+        mine = [o for o in offers if o.origin.upper() in prefs.origins]
+        result.total_offers = len(mine)
+        result.errors = [msg for origin, msg in errors if origin in prefs.origins]
+
+        deals = self._select_deals(mine, prefs)
         if mark_as_sent:
             for ev in deals:
-                self.storage.mark_sent(ev.offer.offer_hash, ev.offer.price)
+                self.storage.mark_sent(
+                    prefs.chat_id, ev.offer.offer_hash, ev.offer.price
+                )
         result.deals = deals
         return result
 
+    def search_for_user(
+        self, chat_id: str | int, mark_as_sent: bool = True
+    ) -> SearchResult:
+        """Ricerca completa per un singolo utente (comando /oggi, test)."""
+        prefs = self.prefs_for(chat_id)
+        offers, errors = self.fetch_offers(prefs.origins)
+        return self.select_for_user(prefs, offers, errors, mark_as_sent)
+
     # --- selezione ----------------------------------------------------------
 
-    def _select_deals(self, offers: list[Offer]) -> list[EvaluatedOffer]:
-        thresholds = self.thresholds()
-        rt_weight = self.rt_score_weight()
-        whitelist, blacklist = self.destination_lists()
-
+    def _select_deals(
+        self, offers: list[Offer], prefs: UserPrefs
+    ) -> list[EvaluatedOffer]:
         # una sola offerta per (destinazione, tipo viaggio): la stessa meta può
         # comparire sia come solo-andata sia come andata/ritorno
         evaluated: dict[tuple[str, str], EvaluatedOffer] = {}
         for offer in offers:
             dest = offer.destination.upper()
-            if dest in blacklist:
+            if dest in prefs.blacklist:
                 continue
-            if whitelist and dest not in whitelist:
+            if prefs.whitelist and dest not in prefs.whitelist:
                 continue
 
-            ev = self._evaluate(offer, *thresholds, rt_weight)
+            ev = self._evaluate(offer, prefs)
             if ev is None:
                 continue
-            if self._recently_sent(offer):
+            if self._recently_sent(prefs.chat_id, offer):
                 continue
 
             key = (dest, offer.trip_type)
@@ -157,21 +201,18 @@ class DealEngine:
         ranked = sorted(evaluated.values(), key=lambda e: e.score)
         return ranked[: self.config.top_n]
 
-    def _evaluate(
-        self,
-        offer: Offer,
-        thr_europe: float,
-        thr_extra: float,
-        thr_europe_rt: float,
-        thr_extra_rt: float,
-        discount_pct: float,
-        rt_weight: float,
-    ) -> EvaluatedOffer | None:
+    def _evaluate(self, offer: Offer, prefs: UserPrefs) -> EvaluatedOffer | None:
         if offer.one_way:
-            threshold = thr_europe if is_short_haul(offer.destination) else thr_extra
+            threshold = (
+                prefs.threshold_europe
+                if is_short_haul(offer.destination)
+                else prefs.threshold_extra
+            )
         else:
             threshold = (
-                thr_europe_rt if is_short_haul(offer.destination) else thr_extra_rt
+                prefs.threshold_europe_rt
+                if is_short_haul(offer.destination)
+                else prefs.threshold_extra_rt
             )
         avg, samples = self.storage.route_average(
             offer.origin, offer.destination, offer.trip_type
@@ -181,7 +222,7 @@ class DealEngine:
         reasons = []
         if offer.price <= threshold:
             reasons.append(f"sotto soglia ({threshold:.0f}€)")
-        if has_history and offer.price <= avg * (1 - discount_pct / 100):
+        if has_history and offer.price <= avg * (1 - prefs.discount_pct / 100):
             saving = (1 - offer.price / avg) * 100
             reasons.append(f"-{saving:.0f}% vs media storica ({avg:.0f}€)")
         if not reasons:
@@ -189,7 +230,7 @@ class DealEngine:
 
         score = offer.price / avg if has_history else offer.price / threshold
         if not offer.one_way:
-            score *= rt_weight
+            score *= prefs.rt_score_weight
         return EvaluatedOffer(
             offer=offer,
             score=score,
@@ -197,8 +238,8 @@ class DealEngine:
             route_average=avg if has_history else None,
         )
 
-    def _recently_sent(self, offer: Offer) -> bool:
-        prev = self.storage.last_sent(offer.offer_hash)
+    def _recently_sent(self, chat_id: str, offer: Offer) -> bool:
+        prev = self.storage.last_sent(chat_id, offer.offer_hash)
         if prev is None:
             return False
         prev_price, sent_at = prev

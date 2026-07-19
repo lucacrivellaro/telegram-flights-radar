@@ -1,8 +1,10 @@
 # ✈️ Telegram Flights Radar
 
-Bot Telegram che ogni giorno cerca voli economici in partenza da **Verona (VRN)**
-e **Bergamo (BGY)** verso destinazioni flessibili e invia in chat le migliori
-offerte, con link di prenotazione.
+Bot Telegram **multi-utente** che ogni giorno cerca voli economici verso
+destinazioni flessibili e invia a ogni iscritto le migliori offerte, con link
+di prenotazione. Ogni utente sceglie i propri aeroporti di partenza (default
+**Verona VRN** e **Bergamo BGY**), soglie di prezzo e destinazioni; le nuove
+iscrizioni vanno approvate dall'admin.
 
 ## Come funziona
 
@@ -21,8 +23,13 @@ offerte, con link di prenotazione.
   **oppure** sotto la media storica della rotta di almeno il
   `DISCOUNT_THRESHOLD_PCT`% (la media si costruisce da sola nel database
   SQLite, giorno dopo giorno, separatamente per sola andata e A/R).
-- Le offerte già inviate non vengono ripetute per `RESEND_COOLDOWN_DAYS` giorni,
-  a meno che il prezzo non cali di oltre il 10%.
+- Le offerte già inviate a un utente non gli vengono ripetute per
+  `RESEND_COOLDOWN_DAYS` giorni, a meno che il prezzo non cali di oltre il 10%.
+- **Multi-utente**: chi scrive `/start` al bot entra in lista d'attesa;
+  l'admin (la chat di `TELEGRAM_CHAT_ID`) riceve la richiesta e approva con
+  `/approva`. Le API vengono interrogate **una sola volta per aeroporto
+  distinto** al giorno, qualunque sia il numero di iscritti: il costo API
+  cresce con gli aeroporti configurati, non con gli utenti.
 
 > Perché non Amadeus o Kiwi Tequila? Amadeus ha dismesso il portale
 > Self-Service il 17/07/2026; Kiwi Tequila non accetta nuove registrazioni.
@@ -73,9 +80,18 @@ python main.py
 
 ## Comandi del bot
 
+Tutte le impostazioni (aeroporti, soglie, liste) sono **personali**: ogni
+utente modifica solo le proprie.
+
 | Comando | Effetto |
 |---|---|
+| `/start` | Richiede l'iscrizione (o riattiva le notifiche dopo /stop) |
+| `/stop` | Sospende le notifiche giornaliere |
 | `/oggi` | Ricerca immediata e invio offerte |
+| `/aeroporti` | Mostra i tuoi aeroporti di partenza |
+| `/aeroporti add MXP` | Aggiunge un aeroporto di partenza |
+| `/aeroporti remove BGY` | Rimuove un aeroporto (almeno uno deve restare) |
+| `/aeroporti reset` | Torna ai default del `.env` |
 | `/destinazioni` | Mostra whitelist/blacklist |
 | `/destinazioni add LIS` | Aggiunge LIS alla whitelist (vuota = tutte) |
 | `/destinazioni remove LIS` | Rimuove dalla whitelist |
@@ -91,7 +107,11 @@ python main.py
 | `/soglia peso_ar 0.75` | Peso delle A/R nel ranking (1 = neutro, <1 = favorite) |
 | `/help` | Guida |
 
-Le modifiche fatte via bot sono salvate in SQLite e sopravvivono ai riavvii.
+Comandi riservati all'admin: `/utenti` (elenco iscritti), `/approva CHAT_ID`,
+`/rifiuta CHAT_ID`.
+
+Le modifiche fatte via bot sono salvate in SQLite (per utente) e
+sopravvivono ai riavvii.
 
 ## Deploy
 
@@ -144,7 +164,7 @@ file `.env`:
 | Variabile | Descrizione |
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | **Obbligatoria.** Token del bot da @BotFather. |
-| `TELEGRAM_CHAT_ID` | **Obbligatoria.** ID della chat che riceve le offerte. |
+| `TELEGRAM_CHAT_ID` | **Obbligatoria.** ID della chat dell'admin: riceve e approva le richieste di iscrizione. |
 | `TRAVELPAYOUTS_TOKEN` | Consigliata. Token API Travelpayouts: abilita scali e altre compagnie (senza → solo Ryanair diretti). |
 | `TRAVELPAYOUTS_MARKER` | Opzionale. Marker affiliato per i deep-link Aviasales. |
 | `DB_PATH` | Path del database SQLite. Su Railway: `/app/data/flights.db` (è anche il default dell'immagine Docker). |
@@ -168,8 +188,9 @@ file `.env`:
 | `RESEND_COOLDOWN_DAYS` | Giorni prima di re-inviare la stessa offerta, salvo cali >10% (default `3`). |
 
 Le variabili opzionali non impostate usano i default qui sopra (gli stessi di
-`.env.example`). Ricorda che soglie e liste modificate via comandi bot vengono
-salvate in SQLite e **sovrascrivono** questi valori.
+`.env.example`). Aeroporti, soglie e liste sono i **default per ogni nuovo
+utente**: le personalizzazioni fatte via comandi bot vengono salvate in SQLite
+per utente e **sovrascrivono** questi valori.
 
 #### Passi
 

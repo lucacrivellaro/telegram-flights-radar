@@ -50,6 +50,12 @@ def info(iata: str) -> tuple[str, str]:
     return iata, ""
 
 
+def is_known(iata: str) -> bool:
+    """True se il codice IATA esiste nel dataset (aeroporto o città metro)."""
+    iata = iata.upper()
+    return iata in _CITY_CODES or iata in _AIRPORTS
+
+
 def is_short_haul(iata: str) -> bool:
     """True se la destinazione è in fascia Europa/corto raggio.
 

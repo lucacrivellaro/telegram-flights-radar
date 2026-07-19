@@ -19,7 +19,7 @@ def main() -> None:
     config = Config.from_env()
     config.require_telegram()
 
-    storage = Storage(config.db_path)
+    storage = Storage(config.db_path, admin_chat_id=config.admin_chat_id)
     engine = DealEngine(config, storage)
     app = build_application(config, engine)
     schedule_daily(app, config)

@@ -1,8 +1,11 @@
 # telegram-flights-radar
 
-Bot Telegram che ogni giorno (DAILY_TIME, default 08:00 Europe/Rome) cerca voli
-economici da **VRN e BGY** verso destinazioni flessibili (anche con 1-2 scali)
-e invia le migliori N offerte in chat con link di prenotazione.
+Bot Telegram **multi-utente** che ogni giorno (DAILY_TIME, default 08:00
+Europe/Rome) cerca voli economici verso destinazioni flessibili (anche con
+1-2 scali) e invia a ogni iscritto le migliori N offerte con link di
+prenotazione. Ogni utente ha aeroporti di partenza (default **VRN e BGY**),
+soglie e liste personali; l'iscrizione (/start) va approvata dall'admin
+(`TELEGRAM_CHAT_ID`) con /approva.
 
 ## Stack
 
@@ -24,11 +27,11 @@ multi-compagnia con n. scali). Amadeus/Kiwi/Skyscanner NON usabili
 | `airports.py`                                    | IATA → (città, paese) + `is_short_haul()` per la fascia soglia              |
 | `flights/base.py`                                | dataclass `Offer` (con `offer_hash` per dedup) + protocol `FlightClient`    |
 | `flights/ryanair.py`, `flights/travelpayouts.py` | client API, uno per fonte                                                   |
-| `deals.py`                                       | `DealEngine`: orchestrazione ricerca, regole "è un affare?", ranking, dedup |
-| `storage.py`                                     | SQLite: `price_history`, `sent_offers`, `settings`                          |
+| `deals.py`                                       | `DealEngine`: `fetch_offers()` (API, per aeroporto) + `select_for_user()` (soglie/liste/dedup per utente via `UserPrefs`) |
+| `storage.py`                                     | SQLite: `price_history` (globale), `sent_offers` (per chat), `users`, `user_settings` |
 | `formatter.py`                                   | messaggi Telegram in HTML, date/testi in italiano                           |
-| `bot.py`                                         | comandi `/oggi /destinazioni /soglia /help` + `run_search_and_send`         |
-| `scheduler.py`                                   | `schedule_daily()` sulla JobQueue                                           |
+| `bot.py`                                         | comandi utente `/oggi /aeroporti /destinazioni /soglia /stop /help`, admin `/utenti /approva /rifiuta` + `run_search_and_send` |
+| `scheduler.py`                                   | `schedule_daily()`: un fetch sull'unione degli aeroporti degli utenti attivi, poi un messaggio a testa |
 | `main.py`                                        | entry point produzione · `search_once.py` test una tantum                   |
 
 
@@ -44,13 +47,19 @@ registrarlo in `DealEngine._clients()`.
 - Nuova regola "offerta": in `DealEngine._evaluate()`; deve aggiungere una
 stringa a `reasons` (finisce nel messaggio) e definire il suo `score` (più
 basso = migliore).
-- ⚠️ **Le impostazioni nella tabella `settings` del DB sovrascrivono il `.env`**
-(soglie, whitelist, blacklist — modificate via comandi bot). Se una soglia
-sembra ignorata, controllare lì prima di toccare il codice.
+- ⚠️ **Le impostazioni nella tabella `user_settings` del DB sovrascrivono il
+`.env`** (aeroporti, soglie, whitelist, blacklist — modificate via comandi
+bot, scoped per `chat_id`; il `.env` è solo il default per i nuovi utenti).
+Se una soglia sembra ignorata, controllare lì prima di toccare il codice.
+- Le API si interrogano una volta per aeroporto distinto (unione fra tutti
+gli utenti attivi), mai una volta per utente: `fetch_offers()` è condivisa,
+`select_for_user()` è la parte personalizzata.
 
 ## Env vars
 
-Obbligatorie: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`. Consigliata:
+Obbligatorie: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (chat dell'admin, che
+approva le iscrizioni; i valori di ricerca del `.env` sono i default per ogni
+nuovo utente). Consigliata:
 `TRAVELPAYOUTS_TOKEN` (senza → solo Ryanair diretti). Opzionali:
 `TRAVELPAYOUTS_MARKER`, `ORIGIN_AIRPORTS`, `SEARCH_DAYS_AHEAD`,
 `DESTINATIONS_WHITELIST/BLACKLIST`, `PRICE_THRESHOLD_EUROPE/EXTRA`,
@@ -90,6 +99,12 @@ senza alcuna chiave, quindi il test è sempre eseguibile).
    preservi i dati esistenti. Aggiunte: solo `ALTER TABLE ADD COLUMN` idempotente.
 
 ## Stato noto / limitazioni (aggiornare nel tempo)
+
+- Multi-utente (2026-07): tabelle `users` (pending/active/stopped/blocked) e
+`user_settings`; `sent_offers` migrata a PK `(chat_id, offer_hash)` con i dati
+pre-esistenti attribuiti all'admin, così come le vecchie `settings` globali
+(la tabella `settings` resta nello schema ma è vuota/legacy). `price_history`
+resta condivisa fra tutti gli utenti.
 
 - `TRAVELPAYOUTS_TOKEN` configurato in `.env` → il bot usa anche Travelpayouts
 (scali, altre compagnie), non solo Ryanair diretti.

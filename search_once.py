@@ -28,12 +28,13 @@ def main() -> None:
     args = parser.parse_args()
 
     config = Config.from_env()
-    storage = Storage(config.db_path)
+    storage = Storage(config.db_path, admin_chat_id=config.admin_chat_id)
     engine = DealEngine(config, storage)
 
-    # in modalità test non marchiamo le offerte come inviate,
-    # così il messaggio giornaliero non ne risente
-    result = engine.search(mark_as_sent=args.send)
+    # la ricerca di test usa le preferenze dell'admin (o i default del .env
+    # se TELEGRAM_CHAT_ID non è configurato); in modalità test non marchiamo
+    # le offerte come inviate, così il messaggio giornaliero non ne risente
+    result = engine.search_for_user(config.admin_chat_id, mark_as_sent=args.send)
     message = build_message(result)
 
     print("\n" + "=" * 60)
@@ -51,7 +52,7 @@ def main() -> None:
         async def send() -> None:
             async with Bot(config.telegram_token) as bot:
                 await bot.send_message(
-                    chat_id=config.chat_id,
+                    chat_id=config.admin_chat_id,
                     text=message,
                     parse_mode=ParseMode.HTML,
                     disable_web_page_preview=True,

@@ -15,7 +15,10 @@ def _csv(value: str) -> list[str]:
 @dataclass
 class Config:
     telegram_token: str
-    chat_id: str
+    # chat dell'admin: riceve le richieste di iscrizione e può approvarle;
+    # i valori qui sotto (origins, soglie, liste) sono i DEFAULT per ogni
+    # utente, sovrascrivibili a testa nella tabella user_settings del DB.
+    admin_chat_id: str
     travelpayouts_token: str
     travelpayouts_marker: str
     origins: list[str] = field(default_factory=lambda: ["VRN", "BGY"])
@@ -42,7 +45,7 @@ class Config:
     def from_env(cls) -> "Config":
         return cls(
             telegram_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
-            chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
+            admin_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
             travelpayouts_token=os.getenv("TRAVELPAYOUTS_TOKEN", ""),
             travelpayouts_marker=os.getenv("TRAVELPAYOUTS_MARKER", ""),
             origins=_csv(os.getenv("ORIGIN_AIRPORTS", "VRN,BGY")),
@@ -68,8 +71,8 @@ class Config:
         )
 
     def require_telegram(self) -> None:
-        if not self.telegram_token or not self.chat_id:
+        if not self.telegram_token or not self.admin_chat_id:
             raise SystemExit(
-                "TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID sono obbligatori: "
-                "compila il file .env (vedi .env.example)."
+                "TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID (chat dell'admin) sono "
+                "obbligatori: compila il file .env (vedi .env.example)."
             )
