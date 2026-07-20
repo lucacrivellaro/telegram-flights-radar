@@ -32,14 +32,37 @@ HELP_TEXT = """<b>Radar voli — comandi</b>
 /destinazioni block|unblock XXX — gestisci la blacklist
 /destinazioni reset — torna ai valori di default
 /soglia — le tue soglie di prezzo
-/soglia europa|europa_ar|extra|extra_ar|sconto N — imposta soglia (€ o %)
-/soglia peso_ar N — peso delle A/R nel ranking (1 = neutro, &lt;1 = favorite)
+/soglia europa|europa_ar|extra|extra_ar|sconto|peso_ar N — imposta un parametro
 /stop — sospendi le notifiche giornaliere
 /help — questo messaggio
 
 Ogni giorno alle {daily_time} ricevi le migliori offerte
 dai tuoi aeroporti ({origins}): {trip_mode} con soggiorni di
-{min_nights}-{max_nights} notti. Tutte le impostazioni sono personali."""
+{min_nights}-{max_nights} notti. Tutte le impostazioni sono personali.
+
+<b>Come funzionano le soglie</b>
+Un'offerta viene segnalata se il prezzo è sotto la soglia assoluta
+(europa/europa_ar/extra/extra_ar) OPPURE se costa almeno "sconto"% in meno
+della media storica di quella rotta (serve un minimo di rilevazioni
+accumulate nei giorni precedenti, quindi all'inizio conta solo la soglia
+assoluta). Bastano una delle due condizioni, non entrambe.
+
+• <b>europa</b> — soglia (€) per voli di sola andata verso Europa/corto
+raggio (es. Italia, Spagna, Francia...)
+• <b>extra</b> — soglia (€) per voli di sola andata verso destinazioni
+extra-Europa/lungo raggio (le destinazioni sconosciute usano la soglia più
+bassa "europa", per prudenza)
+• <b>europa_ar</b> / <b>extra_ar</b> — le stesse due soglie ma per andata e
+ritorno insieme (prezzo totale del viaggio, non a tratta)
+• <b>sconto</b> — sconto minimo (%) rispetto al prezzo medio storico della
+rotta per considerare l'offerta un affare, indipendentemente dalla soglia
+assoluta
+• <b>peso_ar</b> — non è un filtro ma un peso nella classifica: valori
+&lt;1 fanno salire le offerte A/R in cima al messaggio, 1 = nessuna
+preferenza tra andata semplice e A/R
+
+{soglie_one_way_note}Esempi: /soglia europa 45 · /soglia europa_ar 70 · /soglia extra 250 ·
+/soglia extra_ar 500 · /soglia sconto 30 · /soglia peso_ar 0.75"""
 
 ADMIN_HELP_TEXT = """
 
@@ -267,6 +290,13 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "sola andata e andata/ritorno"
             if config.search_one_way
             else "andata/ritorno"
+        ),
+        soglie_one_way_note=(
+            ""
+            if config.search_one_way
+            else "⚠️ La ricerca sola andata è disattivata: al momento contano "
+            "solo <b>europa_ar</b> ed <b>extra_ar</b>, \"europa\" ed \"extra\" "
+            "non hanno effetto.\n\n"
         ),
         min_nights=config.min_trip_nights,
         max_nights=config.max_trip_nights,
