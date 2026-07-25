@@ -39,6 +39,46 @@ _SHORT_HAUL_COUNTRIES = {
 }
 
 
+# Codici che servono la stessa area metropolitana. Il confronto sui nomi non
+# basta (MIL="Milano" ma MXP="Milan", ROM="Roma" ma FCO="Rome"), e serve per
+# non proporre una "tappa" a due passi da casa né due tappe nella stessa città.
+_METRO_GROUPS: list[set[str]] = [
+    {"MIL", "MXP", "LIN", "BGY"},
+    {"ROM", "FCO", "CIA"},
+    {"VCE", "TSF"},
+    {"LON", "LHR", "LGW", "STN", "LTN", "LCY", "SEN"},
+    {"PAR", "CDG", "ORY", "BVA"},
+    {"BER", "SXF", "TXL"},
+    {"STO", "ARN", "BMA", "NYO", "VST"},
+    {"OSL", "TRF"},
+    {"BRU", "CRL"},
+    {"BUH", "OTP", "BBU"},
+    {"MOW", "SVO", "DME", "VKO"},
+    {"IST", "SAW"},
+    {"NYC", "JFK", "EWR", "LGA"},
+    {"WAS", "IAD", "DCA", "BWI"},
+    {"CHI", "ORD", "MDW"},
+    {"SAO", "GRU", "CGH", "VCP"},
+    {"RIO", "GIG", "SDU"},
+    {"TYO", "NRT", "HND"},
+    {"BJS", "PEK", "PKX"},
+    {"SHA", "PVG"},
+    {"SEL", "ICN", "GMP"},
+]
+_METRO_OF: dict[str, int] = {
+    code: index for index, group in enumerate(_METRO_GROUPS) for code in group
+}
+
+
+def same_metro(a: str, b: str) -> bool:
+    """True se i due codici servono la stessa città/area metropolitana."""
+    a, b = a.upper(), b.upper()
+    if a == b:
+        return True
+    group_a, group_b = _METRO_OF.get(a), _METRO_OF.get(b)
+    return group_a is not None and group_a == group_b
+
+
 def info(iata: str) -> tuple[str, str]:
     """Ritorna (nome città, codice paese ISO). Fallback: (codice IATA, "")."""
     iata = iata.upper()

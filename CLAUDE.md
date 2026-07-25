@@ -1,10 +1,13 @@
 # telegram-flights-radar
 
 Bot Telegram **multi-utente** che ogni giorno (DAILY_TIME, default 08:00
-Europe/Rome) cerca voli economici verso destinazioni flessibili (anche con
-1-2 scali) e invia a ogni iscritto le migliori N offerte con link di
-prenotazione. Ogni utente ha aeroporti di partenza (default **VRN e BGY**),
-soglie e liste personali; l'iscrizione (/start) va approvata dall'admin
+Europe/Rome) cerca voli economici verso destinazioni flessibili e invia a ogni
+iscritto le migliori N offerte **andata/ritorno, solo voli diretti**, con link
+di prenotazione, più una sezione di **viaggi a tappe** (itinerari multi-città
+composti dal bot, con tappe extra-Europa). Ogni utente ha **due liste** di
+aeroporti di partenza — corto raggio (default **VRN, BGY**) e lungo raggio per
+extra-Europa e viaggi a tappe (default **VCE, BGY, MXP**) — più soglie e liste
+destinazioni personali; l'iscrizione (/start) va approvata dall'admin
 (`TELEGRAM_CHAT_ID`) con /approva.
 
 ## Stack
@@ -25,8 +28,9 @@ multi-compagnia con n. scali). Amadeus/Kiwi/Skyscanner NON usabili
 | ------------------------------------------------ | --------------------------------------------------------------------------- |
 | `config.py`                                      | `Config.from_env()`: tutto il `.env`, nessun altro file legge env           |
 | `airports.py`                                    | IATA → (città, paese) + `is_short_haul()` per la fascia soglia              |
-| `flights/base.py`                                | dataclass `Offer` (con `offer_hash` per dedup) + protocol `FlightClient`    |
-| `flights/ryanair.py`, `flights/travelpayouts.py` | client API, uno per fonte                                                   |
+| `flights/base.py`                                | dataclass `Offer` (con `offer_hash` per dedup) + `Leg` (tratta multitratta) + protocol `FlightClient` |
+| `flights/ryanair.py`, `flights/travelpayouts.py` | client API, uno per fonte. Travelpayouts ha due ricerche A/R: `search_round_trip()` (tante mete, la più economica per meta, quindi con scalo sul lungo raggio) e `search_round_trip_direct()` (solo voli diretti, `direct=true`) |
+| `flights/multitrip.py`                           | `MultiTripBuilder`: compone itinerari a tappe concatenando tratte singole (beam search) — NON è un `FlightClient` |
 | `deals.py`                                       | `DealEngine`: `fetch_offers()` (API, per aeroporto) + `select_for_user()` (soglie/liste/dedup per utente via `UserPrefs`) |
 | `storage.py`                                     | SQLite: `price_history` (globale), `sent_offers` (per chat), `users`, `user_settings` |
 | `formatter.py`                                   | messaggi Telegram in HTML, date/testi in italiano                           |
@@ -46,7 +50,25 @@ Mai fallire in silenzio: anche con zero offerte si invia un messaggio.
 registrarlo in `DealEngine._clients()`.
 - Nuova regola "offerta": in `DealEngine._evaluate()`; deve aggiungere una
 stringa a `reasons` (finisce nel messaggio) e definire il suo `score` (più
-basso = migliore).
+basso = migliore). I multitratta hanno il loro `_evaluate_multi()`: soglia sul
+prezzo *totale*, lista e posti separati (`multi_top_n`), non competono con i
+voli singoli.
+- **Multitratta**: un `Offer` con `legs` valorizzato è un itinerario a tappe
+(`is_multi`, `trip_type == "multi_city"`, `stopovers` = tappe con sosta). Le
+tratte sono biglietti separati: prezzo = somma, un link per tratta. Il
+`MultiTripBuilder` non implementa `FlightClient` (interfaccia diversa) e va
+registrato in `DealEngine._multi_builder()`, non in `_clients()`.
+- **Due liste di aeroporti** per utente: `origins` (corto raggio) e
+`intl_origins` (lungo raggio). `DealEngine._origin_allowed()` instrada ogni
+offerta sulla lista giusta in base a `is_short_haul(destination)`; i
+multitratta partono solo dagli `intl_origins`. `UserPrefs.all_origins` è
+l'unione, usata per interrogare le API una volta sola.
+- Il bot invia **solo A/R**: non esistono più soglie/ricerche di sola andata
+(rimosse il 2026-07-25 su richiesta, erano codice morto con `SEARCH_ONE_WAY`
+a false). `FlightClient` espone quindi solo `search_round_trip()`. I comandi
+`/soglia europa|extra` puntano alle chiavi DB `threshold_europe_rt`/
+`threshold_extra_rt`: i nomi delle *chiavi* non sono cambiati, quindi le
+preferenze già salvate restano valide.
 - ⚠️ **Le impostazioni nella tabella `user_settings` del DB sovrascrivono il
 `.env`** (aeroporti, soglie, whitelist, blacklist — modificate via comandi
 bot, scoped per `chat_id`; il `.env` è solo il default per i nuovi utenti).
@@ -61,13 +83,19 @@ Obbligatorie: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (chat dell'admin, che
 approva le iscrizioni; i valori di ricerca del `.env` sono i default per ogni
 nuovo utente). Consigliata:
 `TRAVELPAYOUTS_TOKEN` (senza → solo Ryanair diretti). Opzionali:
-`TRAVELPAYOUTS_MARKER`, `ORIGIN_AIRPORTS`, `SEARCH_DAYS_AHEAD`,
-`DESTINATIONS_WHITELIST/BLACKLIST`, `PRICE_THRESHOLD_EUROPE/EXTRA`,
+`TRAVELPAYOUTS_MARKER`, `ORIGIN_AIRPORTS` (corto raggio),
+`INTL_ORIGIN_AIRPORTS` (lungo raggio: extra-Europa A/R e multitratta),
+`SEARCH_DAYS_AHEAD`,
+`DESTINATIONS_WHITELIST/BLACKLIST`,
 `PRICE_THRESHOLD_EUROPE_RT/EXTRA_RT` (soglie A/R, prezzo totale),
+`PRICE_THRESHOLD_MULTI` (soglia sul totale di un itinerario a tappe),
+`TOP_N_EXTRA` (posti riservati al lungo raggio),
+`DIRECT_ONLY` (corto raggio, default true) e `DIRECT_ONLY_EXTRA` (lungo
+raggio, default false),
+`MULTI_ENABLED/TOP_N/MIN_STOPS/MAX_STOPS/MIN_STAY_NIGHTS/MAX_STAY_NIGHTS/`
+`MAX_TRIP_DAYS/DIRECT_ONLY/EXTRA_EUROPE_ONLY/BEAM_WIDTH/CANDIDATES/`
+`MAX_API_CALLS` (multitratta),
 `MIN/MAX_TRIP_NIGHTS` (range soggiorno A/R, default 3-10),
-`SEARCH_ONE_WAY` (default false: si cercano solo A/R; true riattiva anche
-la sola andata),
-`RT_SCORE_WEIGHT` (peso A/R nel ranking, default 0.75: <1 favorisce le A/R),
 `DISCOUNT_THRESHOLD_PCT`, `MIN_HISTORY_SAMPLES`, `TOP_N`,
 `RESEND_COOLDOWN_DAYS`, `DAILY_TIME`, `TIMEZONE`, `DB_PATH`.
 Tutte documentate con commenti in `.env.example`.
@@ -110,6 +138,44 @@ resta condivisa fra tutti gli utenti.
 (scali, altre compagnie), non solo Ryanair diretti.
 - L'API gratuita Travelpayouts espone *numero* scali e durata totale ma NON gli
 aeroporti di scalo/tempi di attesa (serve API a pagamento tipo Duffel/SerpApi).
+- Multitratta (2026-07-25): nessuna API gratuita vende itinerari multi-city, il
+bot li **compone**. Due endpoint con ruoli distinti: `/v2/prices/latest`
+(`period_type=month`, 200-500 rotte per città = scelta dei candidati, le sue
+date NON sono vincolanti) e `/aviasales/v3/grouped_prices`
+(`group_by=departure_at` + `direct=true`, prezzo giorno per giorno di una rotta
+= aggancio della tappa successiva). `v3/prices_for_dates` con la sola origine è
+inutilizzabile per la scoperta: ritorna 30 righe / 8 destinazioni.
+- Il collo di bottiglia del multitratta è il **volo di rientro**, non il budget
+API: da un aeroporto piccolo le catene più economiche finiscono in città che
+non hanno un diretto verso casa. Per questo `build()` calcola `_home_routes` e
+riserva metà dei posti candidati alle città collegate a casa.
+- Multitratta **solo extra-Europa** (`multi_extra_europe_only`, 2026-07-25):
+con `multi_direct_only=True` la resa crollava (VCE 0 itinerari, MXP 3 a
+713-945€), quindi il default è passato a **False** — sulle rotte
+intercontinentali gli scali sono la norma. Con gli scali ammessi: VCE 3
+itinerari, MXP da 503€, ~120 chiamate API e ~18s per aeroporto. Prezzi reali
+360-550€: da qui `PRICE_THRESHOLD_MULTI=700`.
+- **Quota per fascia** (`_apply_quota`, `TOP_N_EXTRA=2`): senza, le offerte
+extra-Europa A/R non entrerebbero quasi mai nelle TOP_N, perché lo score è
+`prezzo/soglia` della fascia e un A/R Europa a 43€ (0.61) batte Miami a 507€
+(0.92). Non si risolve ritoccando le soglie: abbassarle peggiora lo score. I
+posti non riempiti da una fascia passano all'altra, così la quota garantisce
+senza sprecare. Composizione del messaggio: 6 Europa + 2 extra + 2 multitratta.
+- ⚠️ I posti extra-Europa richiedono voli **diretti** (`_vuole_diretto()`), e
+questo funziona solo grazie a `TravelpayoutsClient.search_round_trip_direct()`:
+`/v2/prices/latest` ritorna una riga per destinazione, la *più economica*, che
+intercontinentale è sempre con scalo — delle 45 tariffe extra-Europa trovate
+così, **zero** erano dirette. Le dirette esistono ma emergono solo con
+`/aviasales/v3/prices_for_dates` + `direct=true` (1 chiamata per aeroporto e
+mese, ~550 tariffe A/R dirette per giro). Se un giorno i posti 7-8 tornano
+vuoti, guardare lì prima che alle soglie.
+- `PRICE_THRESHOLD_EXTRA_RT=900` non è generosità: dopo i filtri finestra +
+3-10 notti, le A/R dirette extra-Europa disponibili erano 9, da 583€ (Sharjah)
+a 1594€ (Tokyo). A 550€ ne passavano **zero**, a 900€ ne passano 5 — bacino
+sufficiente per 2 posti. La soglia tocca solo questa fascia (`_evaluate` la
+usa solo se `not is_short_haul`).
+- `airports.same_metro()` evita tappe a due passi da casa (MIL partendo da BGY):
+il confronto sui nomi non basta, MIL="Milano" ma MXP="Milan".
 - L'API Ryanair è non ufficiale: nessun rate limit documentato, può cambiare o
 bloccare senza preavviso (User-Agent browser già impostato nel client).
 - La media storica per rotta diventa attendibile solo dopo `MIN_HISTORY_SAMPLES`
@@ -118,10 +184,9 @@ bloccare senza preavviso (User-Agent browser già impostato nel client).
 rilevazioni A/R ripartono quasi da zero anche se il DB ha già dati one-way.
 - Ricerca A/R: Ryanair usa `farfnd/v4/roundTripFares` con `durationFrom/To`
 (parametro non documentato → il range notti viene sempre rifiltrato client-side);
-Travelpayouts usa lo stesso `/v2/prices/latest` con `one_way=false`. La ricerca
-sola andata su Travelpayouts passa `one_way=true` (prima del 2026-07 passava
-`false`, quindi lo storico pre-migrazione conteneva prezzi A/R etichettati
-one-way: sistemato dal backfill su `return_date`).
+Travelpayouts usa lo stesso `/v2/prices/latest` con `one_way=false`. Lo storico
+`price_history` conserva ancora righe `trip_type='one_way'` di quando la
+ricerca sola andata esisteva: sono inerti, non vengono più né scritte né lette.
 - Deploy in corso su Railway (scelto per l'hosting): repo pushato su GitHub
 (`lucacrivellaro/telegram-flights-radar`, privato) con auto-deploy su push.
 Lato repo è tutto pronto: Dockerfile, `.dockerignore`, procedura completa nel

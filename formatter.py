@@ -22,6 +22,37 @@ def _fmt_duration(minutes: int | None) -> str:
     return f" · {minutes // 60}h{minutes % 60:02d}m totali" if minutes % 60 else f" · {minutes // 60}h totali"
 
 
+def _fmt_nights(n: int) -> str:
+    return f"{n} nott{'e' if n == 1 else 'i'}"
+
+
+def _fmt_multi(index: int, ev: EvaluatedOffer) -> str:
+    """Un itinerario a tappe: una riga per tratta, con sosta e link propri.
+
+    Ogni tratta è un biglietto separato, quindi ogni riga ha il suo link."""
+    o = ev.offer
+    tappe = o.stopovers
+    titolo = " → ".join(escape(leg.dest_city) for leg in tappe)
+    giorni = (o.return_date - o.depart_date).days if o.return_date else None
+
+    lines = [
+        f"<b>{index}. {escape(o.origin)} → {titolo} → {escape(o.origin)}</b>"
+        f" — <b>{o.price:.2f} €</b>",
+        f"   🗺 {len(tappe)} tappe · {len(o.legs)} voli · "
+        f"{_fmt_date(o.depart_date)} → {_fmt_date(o.return_date)}"
+        + (f" · {giorni} giorni" if giorni else ""),
+    ]
+    for n, leg in enumerate(o.legs, start=1):
+        sosta = f" · 🛏 {_fmt_nights(leg.nights)}" if leg.nights else " · 🏠 rientro"
+        lines.append(
+            f"   {n}. <a href=\"{leg.link}\">{_fmt_date(leg.depart_date)}</a> "
+            f"{escape(leg.origin)} → {escape(leg.dest_city)} ({escape(leg.destination)})"
+            f" · {leg.price:.0f} €{sosta}"
+        )
+    lines.append(f"   💡 {escape(ev.reason)}")
+    return "\n".join(lines)
+
+
 def _fmt_offer(index: int, ev: EvaluatedOffer) -> str:
     o = ev.offer
     city = escape(o.dest_city)
@@ -56,17 +87,27 @@ def build_message(result: SearchResult, today: date | None = None) -> str:
         f"{today.day} {_MESI[today.month - 1]}</b>"
     )
 
-    if not result.deals:
+    blocks: list[str] = []
+    if result.deals:
+        blocks += [_fmt_offer(i, ev) for i, ev in enumerate(result.deals, start=1)]
+    elif not result.multi_deals:
         body = "Oggi nessuna offerta sotto soglia. 😴"
         if result.total_offers:
             body += f"\n(analizzate {result.total_offers} tariffe)"
-    else:
-        body = "\n\n".join(
-            _fmt_offer(i, ev) for i, ev in enumerate(result.deals, start=1)
-        )
-        body += f"\n\n<i>{result.total_offers} tariffe analizzate.</i>"
+        blocks.append(body)
 
-    parts = [header, "", body]
+    if result.multi_deals:
+        blocks.append("🧭 <b>Viaggi a tappe</b>")
+        start = len(result.deals) + 1
+        blocks += [
+            _fmt_multi(i, ev)
+            for i, ev in enumerate(result.multi_deals, start=start)
+        ]
+
+    if result.deals or result.multi_deals:
+        blocks.append(f"<i>{result.total_offers} tariffe analizzate.</i>")
+
+    parts = [header, "", "\n\n".join(blocks)]
     if result.errors:
         errs = "\n".join(f"• {escape(e)}" for e in result.errors)
         parts += ["", f"⚠️ <b>Problemi durante la ricerca:</b>\n{errs}"]

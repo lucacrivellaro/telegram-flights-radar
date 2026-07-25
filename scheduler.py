@@ -30,11 +30,21 @@ async def _daily_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         # le API si interrogano una volta sola per aeroporto distinto,
         # qualunque sia il numero di utenti
         prefs_by_user = {u["chat_id"]: engine.prefs_for(u["chat_id"]) for u in users}
-        all_origins = sorted({o for p in prefs_by_user.values() for o in p.origins})
-        logger.info(
-            "Ricerca per %d utenti su %s", len(users), ", ".join(all_origins)
+        all_origins = sorted({o for p in prefs_by_user.values() for o in p.all_origins})
+        # gli itinerari a tappe si costruiscono solo dagli aeroporti di lungo
+        # raggio: sono la parte più costosa della ricerca
+        multi_origins = sorted(
+            {o for p in prefs_by_user.values() for o in p.intl_origins}
         )
-        offers, errors = await asyncio.to_thread(engine.fetch_offers, all_origins)
+        logger.info(
+            "Ricerca per %d utenti su %s (tappe: %s)",
+            len(users),
+            ", ".join(all_origins),
+            ", ".join(multi_origins),
+        )
+        offers, errors = await asyncio.to_thread(
+            engine.fetch_offers, all_origins, multi_origins
+        )
 
         for chat_id, prefs in prefs_by_user.items():
             try:

@@ -25,44 +25,63 @@ HELP_TEXT = """<b>Radar voli — comandi</b>
 
 /oggi — cerca subito le offerte
 /aeroporti — i tuoi aeroporti di partenza
-/aeroporti add|remove XXX — gestiscili (codici IATA, es. VRN)
-/aeroporti reset — torna ai default ({default_origins})
+/aeroporti add|remove XXX — gestisci quelli per l'Europa (es. VRN)
+/aeroporti intl add|remove XXX — gestisci quelli per il lungo raggio
+/aeroporti reset — torna ai default (Europa {default_origins} · lungo raggio {default_intl})
 /destinazioni — le tue whitelist e blacklist
 /destinazioni add|remove XXX — gestisci la whitelist (vuota = tutte)
 /destinazioni block|unblock XXX — gestisci la blacklist
 /destinazioni reset — torna ai valori di default
 /soglia — le tue soglie di prezzo
-/soglia europa|europa_ar|extra|extra_ar|sconto|peso_ar N — imposta un parametro
+/soglia europa|extra|multi|sconto N — imposta un parametro
 /stop — sospendi le notifiche giornaliere
 /help — questo messaggio
 
 Ogni giorno alle {daily_time} ricevi le migliori offerte
-dai tuoi aeroporti ({origins}): {trip_mode} con soggiorni di
-{min_nights}-{max_nights} notti. Tutte le impostazioni sono personali.
+<b>andata/ritorno</b> con soggiorni di {min_nights}-{max_nights} notti,
+<b>solo voli diretti</b>: {n_europa} verso l'Europa e {n_extra} extra-Europa,
+più {multi_top_n} viaggi a tappe. I {n_extra} posti extra-Europa sono
+riservati — senza, il lungo raggio non entrerebbe mai in classifica perché
+costa sempre più di un volo europeo. Se una fascia non ha abbastanza offerte
+i suoi posti passano all'altra. Tutte le impostazioni sono personali.
+
+<b>✈️ Due liste di aeroporti</b>
+• <b>Europa</b> ({origins}) — da qui partono le offerte verso Europa e
+corto raggio
+• <b>Lungo raggio</b> ({intl_origins}) — da qui partono le offerte
+extra-Europa e i viaggi a tappe, perché uno scalo regionale non ha voli
+intercontinentali
+
+<b>🧭 Viaggi a tappe</b>
+In fondo al messaggio trovi fino a {multi_top_n} itinerari a più tappe:
+partenza da un aeroporto di lungo raggio, {multi_min_stops}-{multi_max_stops}
+città intermedie <b>fuori dall'Europa</b> con {multi_min_stay}-{multi_max_stay}
+notti ciascuna e rientro, entro {multi_max_trip_days} giorni totali.
+Sono biglietti di sola andata concatenati: ogni tratta ha il suo link e si
+prenota a parte, quindi il prezzo mostrato è la somma delle tratte. Il
+criterio è la soglia <b>multi</b>, che vale sull'intero itinerario e non
+sul singolo volo.
 
 <b>Come funzionano le soglie</b>
-Un'offerta viene segnalata se il prezzo è sotto la soglia assoluta
-(europa/europa_ar/extra/extra_ar) OPPURE se costa almeno "sconto"% in meno
-della media storica di quella rotta (serve un minimo di rilevazioni
-accumulate nei giorni precedenti, quindi all'inizio conta solo la soglia
-assoluta). Bastano una delle due condizioni, non entrambe.
+Un'offerta viene segnalata se il prezzo totale A/R è sotto la soglia
+assoluta OPPURE se costa almeno "sconto"% in meno della media storica di
+quella rotta (serve un minimo di rilevazioni accumulate nei giorni
+precedenti, quindi all'inizio conta solo la soglia assoluta). Basta una
+delle due condizioni, non entrambe.
 
-• <b>europa</b> — soglia (€) per voli di sola andata verso Europa/corto
-raggio (es. Italia, Spagna, Francia...)
-• <b>extra</b> — soglia (€) per voli di sola andata verso destinazioni
-extra-Europa/lungo raggio (le destinazioni sconosciute usano la soglia più
-bassa "europa", per prudenza)
-• <b>europa_ar</b> / <b>extra_ar</b> — le stesse due soglie ma per andata e
-ritorno insieme (prezzo totale del viaggio, non a tratta)
+• <b>europa</b> — soglia (€) per l'A/R verso Europa/corto raggio (prezzo
+totale del viaggio, non a tratta)
+• <b>extra</b> — soglia (€) per l'A/R verso destinazioni extra-Europa/lungo
+raggio (le destinazioni sconosciute usano la soglia più bassa "europa",
+per prudenza)
+• <b>multi</b> — soglia (€) sul <i>totale</i> di un viaggio a tappe (somma di
+tutte le tratte). Le altre soglie non si applicano ai viaggi a tappe
 • <b>sconto</b> — sconto minimo (%) rispetto al prezzo medio storico della
 rotta per considerare l'offerta un affare, indipendentemente dalla soglia
 assoluta
-• <b>peso_ar</b> — non è un filtro ma un peso nella classifica: valori
-&lt;1 fanno salire le offerte A/R in cima al messaggio, 1 = nessuna
-preferenza tra andata semplice e A/R
 
-{soglie_one_way_note}Esempi: /soglia europa 45 · /soglia europa_ar 70 · /soglia extra 250 ·
-/soglia extra_ar 500 · /soglia sconto 30 · /soglia peso_ar 0.75"""
+Esempi: /soglia europa 70 · /soglia extra 550 · /soglia multi 700 ·
+/soglia sconto 30"""
 
 ADMIN_HELP_TEXT = """
 
@@ -285,21 +304,19 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = HELP_TEXT.format(
         daily_time=config.daily_time,
         origins=", ".join(prefs.origins),
+        intl_origins=", ".join(prefs.intl_origins),
         default_origins=", ".join(config.origins),
-        trip_mode=(
-            "sola andata e andata/ritorno"
-            if config.search_one_way
-            else "andata/ritorno"
-        ),
-        soglie_one_way_note=(
-            ""
-            if config.search_one_way
-            else "⚠️ La ricerca sola andata è disattivata: al momento contano "
-            "solo <b>europa_ar</b> ed <b>extra_ar</b>, \"europa\" ed \"extra\" "
-            "non hanno effetto.\n\n"
-        ),
+        default_intl=", ".join(config.intl_origins),
         min_nights=config.min_trip_nights,
         max_nights=config.max_trip_nights,
+        n_europa=config.top_n - config.top_n_extra,
+        n_extra=config.top_n_extra,
+        multi_top_n=config.multi_top_n,
+        multi_min_stops=config.multi_min_stops,
+        multi_max_stops=config.multi_max_stops,
+        multi_min_stay=config.multi_min_stay,
+        multi_max_stay=config.multi_max_stay,
+        multi_max_trip_days=config.multi_max_trip_days,
     )
     if _is_admin(update, config):
         text += ADMIN_HELP_TEXT
@@ -328,28 +345,58 @@ async def cmd_aeroporti(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     chat_id = update.effective_chat.id
     args = [a.upper() for a in context.args]
 
+    def elenco(codes: list[str]) -> str:
+        return "\n".join(
+            f"• {code} — {escape(airports.info(code)[0])}" for code in codes
+        )
+
     if not args:
-        origins = engine.prefs_for(chat_id).origins
-        lines = [f"• {code} — {escape(airports.info(code)[0])}" for code in origins]
+        prefs = engine.prefs_for(chat_id)
         await update.message.reply_html(
-            "<b>I tuoi aeroporti di partenza</b>\n" + "\n".join(lines) +
-            "\n\nUsa: /aeroporti add|remove CODICE_IATA, oppure reset"
+            "<b>Europa / corto raggio</b>\n" + elenco(prefs.origins) +
+            "\n\n<b>Lungo raggio</b> (extra-Europa e viaggi a tappe)\n"
+            + elenco(prefs.intl_origins) +
+            "\n\nUsa: /aeroporti add|remove CODICE_IATA per la prima lista,\n"
+            "/aeroporti intl add|remove CODICE_IATA per la seconda,\n"
+            "/aeroporti reset per tornare ai default di entrambe"
         )
         return
 
+    # "/aeroporti intl ..." agisce sulla lista lungo raggio, altrimenti su quella europea
+    intl = args[0].lower() == "intl"
+    if intl:
+        args = args[1:]
+    if not args:
+        await update.message.reply_text(
+            "Uso: /aeroporti intl add|remove CODICE_IATA (es. /aeroporti intl add FCO)"
+        )
+        return
+
+    key = "intl_origins" if intl else "origins"
+    lista = "lungo raggio" if intl else "Europa"
     action = args[0].lower()
     codes = [c for c in args[1:] if len(c) == 3 and c.isalpha()]
 
     if action == "reset":
-        storage.delete_user_setting(chat_id, "origins")
+        # il reset senza "intl" riporta ai default entrambe le liste
+        storage.delete_user_setting(chat_id, key)
+        if not intl:
+            storage.delete_user_setting(chat_id, "intl_origins")
+            await update.message.reply_text(
+                f"✅ Aeroporti riportati ai default — Europa: "
+                f"{', '.join(config.origins)} · lungo raggio: "
+                f"{', '.join(config.intl_origins)}"
+            )
+            return
         await update.message.reply_text(
-            f"✅ Aeroporti riportati ai default: {', '.join(config.origins)}"
+            f"✅ Aeroporti {lista} riportati ai default: "
+            f"{', '.join(config.intl_origins)}"
         )
         return
 
     if action not in {"add", "remove"} or not codes:
         await update.message.reply_text(
-            "Uso: /aeroporti add|remove CODICE_IATA (es. /aeroporti add MXP)"
+            "Uso: /aeroporti [intl] add|remove CODICE_IATA (es. /aeroporti add MXP)"
         )
         return
 
@@ -360,20 +407,21 @@ async def cmd_aeroporti(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         return
 
-    origins = list(engine.prefs_for(chat_id).origins)
+    prefs = engine.prefs_for(chat_id)
+    origins = list(prefs.intl_origins if intl else prefs.origins)
     if action == "add":
         origins = sorted(set(origins) | set(codes))
     else:
         origins = [c for c in origins if c not in codes]
         if not origins:
             await update.message.reply_text(
-                "❌ Deve rimanere almeno un aeroporto di partenza."
+                f"❌ Deve rimanere almeno un aeroporto nella lista {lista}."
             )
             return
 
-    storage.set_user_setting(chat_id, "origins", origins)
+    storage.set_user_setting(chat_id, key, origins)
     await update.message.reply_text(
-        f"✅ Fatto! I tuoi aeroporti: {', '.join(origins)}"
+        f"✅ Fatto! Aeroporti {lista}: {', '.join(origins)}"
     )
 
 
@@ -433,21 +481,18 @@ async def cmd_soglia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     chat_id = update.effective_chat.id
     args = context.args
 
-    usage = "Uso: /soglia europa|europa_ar|extra|extra_ar|sconto|peso_ar NUMERO"
+    usage = "Uso: /soglia europa|extra|multi|sconto NUMERO"
 
     if not args:
         prefs = engine.prefs_for(chat_id)
         await update.message.reply_html(
-            f"<b>Le tue soglie</b>\n"
-            f"• Europa/corto raggio, solo andata: {prefs.threshold_europe:.0f} €\n"
-            f"• Europa/corto raggio, A/R: {prefs.threshold_europe_rt:.0f} €\n"
-            f"• Extra-Europa, solo andata: {prefs.threshold_extra:.0f} €\n"
-            f"• Extra-Europa, A/R: {prefs.threshold_extra_rt:.0f} €\n"
-            f"• Sconto minimo vs media storica: {prefs.discount_pct:.0f}%\n"
-            f"• Peso A/R nel ranking: {prefs.rt_score_weight:g} (1 = neutro, più basso = A/R favorite)\n\n"
-            "Modifica con: /soglia europa 45 · /soglia europa_ar 70 · "
-            "/soglia extra 250 · /soglia extra_ar 500 · /soglia sconto 30 · "
-            "/soglia peso_ar 0.75"
+            f"<b>Le tue soglie</b> (prezzo totale A/R)\n"
+            f"• Europa/corto raggio: {prefs.threshold_europe_rt:.0f} €\n"
+            f"• Extra-Europa/lungo raggio: {prefs.threshold_extra_rt:.0f} €\n"
+            f"• Viaggio a tappe, totale itinerario: {prefs.threshold_multi:.0f} €\n"
+            f"• Sconto minimo vs media storica: {prefs.discount_pct:.0f}%\n\n"
+            "Modifica con: /soglia europa 70 · /soglia extra 550 · "
+            "/soglia multi 700 · /soglia sconto 30"
         )
         return
 
@@ -455,13 +500,15 @@ async def cmd_soglia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text(usage)
         return
 
+    # le offerte inviate sono solo A/R, quindi "europa"/"extra" sono le soglie
+    # sul totale A/R; i vecchi nomi _ar restano accettati per abitudine
     key_map = {
-        "europa": "threshold_europe",
-        "extra": "threshold_extra",
+        "europa": "threshold_europe_rt",
+        "extra": "threshold_extra_rt",
         "europa_ar": "threshold_europe_rt",
         "extra_ar": "threshold_extra_rt",
+        "multi": "threshold_multi",
         "sconto": "discount_pct",
-        "peso_ar": "rt_score_weight",
     }
     key = key_map.get(args[0].lower())
     try:

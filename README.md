@@ -13,16 +13,41 @@ iscrizioni vanno approvate dall'admin.
 - **Travelpayouts/Aviasales Data API** (gratuita, con token): prezzi in cache
   di tutte le compagnie, inclusi itinerari con 1-2 scali. Nota: l'API gratuita
   indica il *numero* di scali e la durata totale, ma non gli aeroporti di scalo.
-- Il bot cerca offerte **andata/ritorno** (soggiorni da `MIN_TRIP_NIGHTS` a
-  `MAX_TRIP_NIGHTS` notti, default 3-10): conta il prezzo totale della
-  combinazione. Con `SEARCH_ONE_WAY=true` cerca in parallelo anche le tariffe
-  di **sola andata**, e la stessa destinazione può comparire nel messaggio con
-  entrambe le tipologie.
+- Il bot cerca **solo offerte andata/ritorno** (soggiorni da `MIN_TRIP_NIGHTS`
+  a `MAX_TRIP_NIGHTS` notti, default 3-10): tutte le soglie sono quindi sul
+  prezzo totale della combinazione, non a tratta.
+- **Due liste di aeroporti di partenza**: `ORIGIN_AIRPORTS` (default
+  `VRN,BGY`) per le mete europee/corto raggio e `INTL_ORIGIN_AIRPORTS`
+  (default `VCE,BGY,MXP`) per il lungo raggio — offerte extra-Europa e viaggi
+  a tappe. Sono separate perché uno scalo regionale non ha voli
+  intercontinentali: cercarli da lì è solo rumore. Entrambe personalizzabili
+  per utente con `/aeroporti` e `/aeroporti intl`.
 - Un'offerta è segnalata se il prezzo è **sotto la soglia assoluta** della sua
   fascia (Europa / extra-Europa, con soglie separate per sola andata e A/R)
   **oppure** sotto la media storica della rotta di almeno il
   `DISCOUNT_THRESHOLD_PCT`% (la media si costruisce da sola nel database
   SQLite, giorno dopo giorno, separatamente per sola andata e A/R).
+- Vengono proposti **solo voli diretti**, su entrambe le fasce
+  (`DIRECT_ONLY`, `DIRECT_ONLY_EXTRA`). Sul lungo raggio questo richiede una
+  ricerca dedicata (`search_round_trip_direct()`, endpoint
+  `v3/prices_for_dates` con `direct=true`): la ricerca normale restituisce
+  solo la tariffa più economica per destinazione, che intercontinentale è
+  sempre con scalo, quindi le dirette non emergerebbero mai. Costano di più —
+  da qui la soglia extra-Europa alta.
+- Il messaggio ha una **composizione garantita**: `TOP_N - TOP_N_EXTRA` offerte
+  europee + `TOP_N_EXTRA` extra-Europa (default 6 + 2), più i viaggi a tappe.
+  Senza la quota il lungo raggio non comparirebbe quasi mai: lo score è
+  `prezzo/soglia` della fascia, e un A/R europeo a 43€ (0.61) batte sempre
+  Miami a 507€ (0.92). I posti che una fascia non riempie passano all'altra.
+- **🧭 Viaggi a tappe** (multitratta): in fondo al messaggio il bot aggiunge
+  fino a `MULTI_TOP_N` itinerari a più tappe — da un aeroporto di lungo raggio
+  → 2-4 città intermedie **fuori dall'Europa** con 2-5 notti di sosta ciascuna
+  → rientro, entro `MULTI_MAX_TRIP_DAYS` giorni.
+  Nessuna API gratuita vende itinerari multi-city, quindi il bot li **compone**
+  concatenando biglietti di sola andata: ogni tratta ha il suo link e si
+  prenota a parte, il prezzo mostrato è la somma. Hanno una soglia dedicata sul
+  totale (`PRICE_THRESHOLD_MULTI`), perché le soglie per volo singolo non sono
+  applicabili a 3-5 tratte sommate. Richiede `TRAVELPAYOUTS_TOKEN`.
 - Le offerte già inviate a un utente non gli vengono ripetute per
   `RESEND_COOLDOWN_DAYS` giorni, a meno che il prezzo non cali di oltre il 10%.
 - **Multi-utente**: chi scrive `/start` al bot entra in lista d'attesa;
@@ -88,10 +113,12 @@ utente modifica solo le proprie.
 | `/start` | Richiede l'iscrizione (o riattiva le notifiche dopo /stop) |
 | `/stop` | Sospende le notifiche giornaliere |
 | `/oggi` | Ricerca immediata e invio offerte |
-| `/aeroporti` | Mostra i tuoi aeroporti di partenza |
-| `/aeroporti add MXP` | Aggiunge un aeroporto di partenza |
+| `/aeroporti` | Mostra le due liste di aeroporti di partenza |
+| `/aeroporti add TRN` | Aggiunge un aeroporto alla lista Europa |
 | `/aeroporti remove BGY` | Rimuove un aeroporto (almeno uno deve restare) |
-| `/aeroporti reset` | Torna ai default del `.env` |
+| `/aeroporti intl add FCO` | Aggiunge un aeroporto alla lista lungo raggio |
+| `/aeroporti intl remove VCE` | Rimuove un aeroporto dal lungo raggio |
+| `/aeroporti reset` | Riporta entrambe le liste ai default del `.env` |
 | `/destinazioni` | Mostra whitelist/blacklist |
 | `/destinazioni add LIS` | Aggiunge LIS alla whitelist (vuota = tutte) |
 | `/destinazioni remove LIS` | Rimuove dalla whitelist |
@@ -99,12 +126,10 @@ utente modifica solo le proprie.
 | `/destinazioni unblock TIA` | Riammette una destinazione |
 | `/destinazioni reset` | Torna ai valori del `.env` |
 | `/soglia` | Mostra le soglie attuali |
-| `/soglia europa 45` | Soglia assoluta Europa sola andata in € |
-| `/soglia europa_ar 70` | Soglia assoluta Europa andata/ritorno in € |
-| `/soglia extra 250` | Soglia assoluta extra-Europa sola andata in € |
-| `/soglia extra_ar 500` | Soglia assoluta extra-Europa andata/ritorno in € |
+| `/soglia europa 70` | Soglia Europa, totale A/R in € |
+| `/soglia extra 550` | Soglia extra-Europa, totale A/R in € |
+| `/soglia multi 700` | Soglia sul totale di un viaggio a tappe in € |
 | `/soglia sconto 30` | Sconto % minimo vs media storica |
-| `/soglia peso_ar 0.75` | Peso delle A/R nel ranking (1 = neutro, <1 = favorite) |
 | `/help` | Guida |
 
 Comandi riservati all'admin: `/utenti` (elenco iscritti), `/approva CHAT_ID`,
@@ -170,22 +195,32 @@ file `.env`:
 | `DB_PATH` | Path del database SQLite. Su Railway: `/app/data/flights.db` (è anche il default dell'immagine Docker). |
 | `DAILY_TIME` | Orario dell'invio giornaliero, formato `HH:MM` (default `08:00`). |
 | `TIMEZONE` | Fuso orario dello scheduler (default `Europe/Rome`). |
-| `ORIGIN_AIRPORTS` | Aeroporti di partenza, CSV di codici IATA (default `VRN,BGY`). |
+| `ORIGIN_AIRPORTS` | Aeroporti per le mete europee, CSV di codici IATA (default `VRN,BGY`). |
+| `INTL_ORIGIN_AIRPORTS` | Aeroporti per il lungo raggio — extra-Europa e viaggi a tappe (default `VCE,BGY,MXP`). |
 | `SEARCH_DAYS_AHEAD` | Finestra di ricerca: da domani a N giorni avanti (default `45`). |
 | `DESTINATIONS_WHITELIST` | Destinazioni ammesse, CSV IATA (vuota = tutte). |
 | `DESTINATIONS_BLACKLIST` | Destinazioni escluse, CSV IATA. |
-| `SEARCH_ONE_WAY` | `true` per cercare anche le tariffe di sola andata (default `false`: solo A/R). |
-| `MIN_TRIP_NIGHTS` | Notti minime di soggiorno per le ricerche A/R (default `3`). |
-| `MAX_TRIP_NIGHTS` | Notti massime di soggiorno per le ricerche A/R (default `10`). |
-| `PRICE_THRESHOLD_EUROPE` | Soglia assoluta in € per le mete europee, sola andata (default `40`). |
-| `PRICE_THRESHOLD_EXTRA` | Soglia assoluta in € per le mete extra-Europa, sola andata (default `300`). |
+| `MIN_TRIP_NIGHTS` | Notti minime di soggiorno (default `3`). |
+| `MAX_TRIP_NIGHTS` | Notti massime di soggiorno (default `10`). |
 | `PRICE_THRESHOLD_EUROPE_RT` | Soglia assoluta in € per le mete europee, A/R totale (default `70`). |
-| `PRICE_THRESHOLD_EXTRA_RT` | Soglia assoluta in € per le mete extra-Europa, A/R totale (default `550`). |
-| `RT_SCORE_WEIGHT` | Peso delle A/R nel ranking: 1 = neutro, <1 = favorite (default `0.75`). |
+| `PRICE_THRESHOLD_EXTRA_RT` | Soglia assoluta in € per le mete extra-Europa, A/R totale (default `900`: vale su voli diretti intercontinentali, sotto i 550€ esistono solo tariffe con scalo). Non tocca le mete europee. |
 | `DISCOUNT_THRESHOLD_PCT` | Sconto % minimo rispetto alla media storica della rotta (default `30`). |
 | `MIN_HISTORY_SAMPLES` | Rilevazioni minime prima di fidarsi della media storica (default `5`). |
 | `TOP_N` | Numero massimo di offerte nel messaggio giornaliero (default `8`). |
+| `TOP_N_EXTRA` | Quanti dei `TOP_N` posti sono riservati alle mete extra-Europa (default `2`, quindi 6 Europa + 2 extra). |
+| `DIRECT_ONLY` | `true` per proporre solo voli diretti verso Europa/corto raggio (default `true`). |
+| `DIRECT_ONLY_EXTRA` | Lo stesso per il lungo raggio (default `true`): attiva la ricerca dedicata delle dirette intercontinentali, +1 chiamata API per aeroporto e mese. |
 | `RESEND_COOLDOWN_DAYS` | Giorni prima di re-inviare la stessa offerta, salvo cali >10% (default `3`). |
+| `MULTI_ENABLED` | Abilita la sezione viaggi a tappe (default `true`; serve `TRAVELPAYOUTS_TOKEN`). |
+| `MULTI_TOP_N` | Itinerari a tappe aggiunti in fondo al messaggio, oltre a `TOP_N` (default `2`). |
+| `PRICE_THRESHOLD_MULTI` | Soglia in € sul **totale** dell'itinerario a tappe (default `700`). |
+| `MULTI_MIN_STOPS` / `MULTI_MAX_STOPS` | Città intermedie per itinerario, casa esclusa (default `2`-`4`). |
+| `MULTI_MIN_STAY_NIGHTS` / `MULTI_MAX_STAY_NIGHTS` | Notti di sosta in ogni città (default `2`-`5`). |
+| `MULTI_MAX_TRIP_DAYS` | Durata massima dell'intero viaggio in giorni (default `20`). |
+| `MULTI_EXTRA_EUROPE_ONLY` | `true` per accettare come tappe solo mete fuori dall'Europa (default `true`). |
+| `MULTI_DIRECT_ONLY` | `true` per accettare solo tratte dirette fra le tappe (default `false`: sulle rotte intercontinentali azzererebbe la resa). |
+| `MULTI_BEAM_WIDTH` / `MULTI_CANDIDATES` | Ampiezza della ricerca a tappe: più alti = più itinerari, più chiamate API (default `4` / `6`). |
+| `MULTI_MAX_API_CALLS` | Tetto di chiamate API per aeroporto nella ricerca a tappe (default `250`, ~140 in un giro tipico). |
 
 Le variabili opzionali non impostate usano i default qui sopra (gli stessi di
 `.env.example`). Aeroporti, soglie e liste sono i **default per ogni nuovo
@@ -244,9 +279,10 @@ config.py        # lettura .env
 airports.py      # città/paese/fascia per codice IATA
 storage.py       # SQLite: storico prezzi, dedup invii, impostazioni
 flights/
-  base.py        # modello Offer + interfaccia client
+  base.py        # modelli Offer/Leg + interfaccia client
   ryanair.py     # client Ryanair fare finder
   travelpayouts.py  # client Travelpayouts/Aviasales
+  multitrip.py   # costruzione itinerari a tappe (beam search su tratte singole)
 deals.py         # logica "è un affare?" + ranking + dedup
 formatter.py     # formattazione messaggi Telegram (HTML)
 bot.py           # comandi /oggi /destinazioni /soglia /help

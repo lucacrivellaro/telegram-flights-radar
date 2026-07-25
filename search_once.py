@@ -40,6 +40,7 @@ def main() -> None:
     print("\n" + "=" * 60)
     print(f"Tariffe analizzate: {result.total_offers}")
     print(f"Offerte selezionate: {len(result.deals)}")
+    print(f"Viaggi a tappe: {len(result.multi_deals)}")
     print(f"Errori: {result.errors or 'nessuno'}")
     print("=" * 60)
     print(message)
