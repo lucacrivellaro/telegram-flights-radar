@@ -48,6 +48,13 @@ iscrizioni vanno approvate dall'admin.
   prenota a parte, il prezzo mostrato è la somma. Hanno una soglia dedicata sul
   totale (`PRICE_THRESHOLD_MULTI`), perché le soglie per volo singolo non sono
   applicabili a 3-5 tratte sommate. Richiede `TRAVELPAYOUTS_TOKEN`.
+- Con `/tappe add NYC` si impone una città sul percorso: ogni itinerario
+  proposto ci passerà. Non è un filtro applicato ai risultati — la ricerca è
+  una beam search che insegue le catene più economiche, e a New York non
+  arriverebbe mai — ma un vincolo che guida la ricerca. Vincolare il percorso
+  riduce molto il numero di itinerari trovati e ne alza il prezzo, quindi di
+  solito va alzata anche `/soglia multi`. Se nessun itinerario soddisfa il
+  vincolo, il messaggio lo dice esplicitamente.
 - Le offerte già inviate a un utente non gli vengono ripetute per
   `RESEND_COOLDOWN_DAYS` giorni, a meno che il prezzo non cali di oltre il 10%.
 - **Multi-utente**: chi scrive `/start` al bot entra in lista d'attesa;
@@ -125,6 +132,10 @@ utente modifica solo le proprie.
 | `/destinazioni block TIA` | Esclude una destinazione |
 | `/destinazioni unblock TIA` | Riammette una destinazione |
 | `/destinazioni reset` | Torna ai valori del `.env` |
+| `/tappe` | Mostra le tappe obbligatorie dei viaggi a tappe |
+| `/tappe add NYC` | Ogni itinerario proposto dovrà passare da New York |
+| `/tappe remove NYC` | Toglie il vincolo su una città |
+| `/tappe reset` | Nessun vincolo di percorso |
 | `/soglia` | Mostra le soglie attuali |
 | `/soglia europa 70` | Soglia Europa, totale A/R in € |
 | `/soglia extra 550` | Soglia extra-Europa, totale A/R in € |
@@ -218,6 +229,7 @@ file `.env`:
 | `MULTI_MIN_STAY_NIGHTS` / `MULTI_MAX_STAY_NIGHTS` | Notti di sosta in ogni città (default `2`-`5`). |
 | `MULTI_MAX_TRIP_DAYS` | Durata massima dell'intero viaggio in giorni (default `20`). |
 | `MULTI_EXTRA_EUROPE_ONLY` | `true` per accettare come tappe solo mete fuori dall'Europa (default `true`). |
+| `MULTI_REQUIRED_STOPS` | Tappe obbligatorie di default, CSV IATA (vuota = nessun vincolo). Personalizzabile per utente con `/tappe`. |
 | `MULTI_DIRECT_ONLY` | `true` per accettare solo tratte dirette fra le tappe (default `false`: sulle rotte intercontinentali azzererebbe la resa). |
 | `MULTI_BEAM_WIDTH` / `MULTI_CANDIDATES` | Ampiezza della ricerca a tappe: più alti = più itinerari, più chiamate API (default `4` / `6`). |
 | `MULTI_MAX_API_CALLS` | Tetto di chiamate API per aeroporto nella ricerca a tappe (default `250`, ~140 in un giro tipico). |

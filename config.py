@@ -69,6 +69,8 @@ class Config:
     search_days_ahead: int = 45
     whitelist: list[str] = field(default_factory=list)
     blacklist: list[str] = field(default_factory=list)
+    # tappe obbligatorie di default per i viaggi a tappe (vuota = nessun vincolo)
+    multi_required: list[str] = field(default_factory=list)
     db_path: str = "data/flights.db"
     resend_cooldown_days: int = 3
 
@@ -111,6 +113,7 @@ class Config:
             search_days_ahead=int(os.getenv("SEARCH_DAYS_AHEAD", "45")),
             whitelist=_csv(os.getenv("DESTINATIONS_WHITELIST", "")),
             blacklist=_csv(os.getenv("DESTINATIONS_BLACKLIST", "")),
+            multi_required=_csv(os.getenv("MULTI_REQUIRED_STOPS", "")),
             db_path=os.getenv("DB_PATH", "data/flights.db"),
             resend_cooldown_days=int(os.getenv("RESEND_COOLDOWN_DAYS", "3")),
         )

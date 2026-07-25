@@ -34,7 +34,7 @@ multi-compagnia con n. scali). Amadeus/Kiwi/Skyscanner NON usabili
 | `deals.py`                                       | `DealEngine`: `fetch_offers()` (API, per aeroporto) + `select_for_user()` (soglie/liste/dedup per utente via `UserPrefs`) |
 | `storage.py`                                     | SQLite: `price_history` (globale), `sent_offers` (per chat), `users`, `user_settings` |
 | `formatter.py`                                   | messaggi Telegram in HTML, date/testi in italiano                           |
-| `bot.py`                                         | comandi utente `/oggi /aeroporti /destinazioni /soglia /stop /help`, admin `/utenti /approva /rifiuta` + `run_search_and_send` |
+| `bot.py`                                         | comandi utente `/oggi /aeroporti /destinazioni /tappe /soglia /stop /help`, admin `/utenti /approva /rifiuta` + `run_search_and_send` |
 | `scheduler.py`                                   | `schedule_daily()`: un fetch sull'unione degli aeroporti degli utenti attivi, poi un messaggio a testa |
 | `main.py`                                        | entry point produzione · `search_once.py` test una tantum                   |
 
@@ -181,7 +181,26 @@ a 1594€ (Tokyo). A 550€ ne passavano **zero**, a 900€ ne passano 5 — bac
 sufficiente per 2 posti. La soglia tocca solo questa fascia (`_evaluate` la
 usa solo se `not is_short_haul`).
 - `airports.same_metro()` evita tappe a due passi da casa (MIL partendo da BGY):
-il confronto sui nomi non basta, MIL="Milano" ma MXP="Milan".
+il confronto sui nomi non basta, MIL="Milano" ma MXP="Milan". Serve anche a
+soddisfare una tappa obbligatoria "NYC" con un itinerario via JFK.
+- **Tappe obbligatorie** (`/tappe`, `multi_required`, 2026-07-25): il vincolo
+guida la beam search, NON è un filtro sui risultati — filtrare a posteriori
+darebbe sempre zero, perché la ricerca insegue le catene più economiche. La
+prima tappa è forzata a una delle obbligatorie (partire altrove le farebbe
+scartare da `_prune`, che ordina per prezzo: New York non compete con Tirana),
+le altre sono forzate quando i posti rimasti bastano appena a coprirle.
+Siccome il vincolo entra nella ricerca, serve **una build per ogni insieme di
+tappe distinto** fra gli utenti attivi (`fetch_offers(required_sets=...)`):
+utenti con lo stesso vincolo condividono la ricerca.
+- Con tappe obbligatorie il rientro va **verificato** prima di allungare la
+catena (`_with_return_home`): `_home_routes` dice che casa vola verso quella
+città, ma è la cache dei prezzi minimi (una data sola) e il calendario del
+rientro su una finestra di 4 giorni è spesso vuoto. Da NYC le mete più
+economiche sono Orlando e Dallas, che verso MXP non hanno rientro; Miami e
+Boston sì, ma stanno più in basso nella lista per prezzo. Resa reale con
+`/tappe add NYC`: BGY 1 itinerario (874€, via Orlando/Los Angeles/Las Vegas),
+MXP 0 — e 874€ sta sopra `PRICE_THRESHOLD_MULTI=700`, quindi senza alzare la
+soglia l'utente vede solo il messaggio "nessun itinerario che passi da NYC".
 - L'API Ryanair è non ufficiale: nessun rate limit documentato, può cambiare o
 bloccare senza preavviso (User-Agent browser già impostato nel client).
 - La media storica per rotta diventa attendibile solo dopo `MIN_HISTORY_SAMPLES`

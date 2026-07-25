@@ -36,6 +36,9 @@ async def _daily_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         multi_origins = sorted(
             {o for p in prefs_by_user.values() for o in p.intl_origins}
         )
+        # una ricerca per ogni vincolo di tappa obbligatoria distinto: il
+        # vincolo guida la beam search, non è filtrabile a posteriori
+        required_sets = [p.multi_required for p in prefs_by_user.values()]
         logger.info(
             "Ricerca per %d utenti su %s (tappe: %s)",
             len(users),
@@ -43,7 +46,7 @@ async def _daily_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             ", ".join(multi_origins),
         )
         offers, errors = await asyncio.to_thread(
-            engine.fetch_offers, all_origins, multi_origins
+            engine.fetch_offers, all_origins, multi_origins, required_sets
         )
 
         for chat_id, prefs in prefs_by_user.items():

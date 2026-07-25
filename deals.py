@@ -26,7 +26,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
-from airports import is_short_haul
+from airports import is_short_haul, same_metro
 from config import Config
 from flights.base import FlightClient, Offer
 from flights.multitrip import MultiTripBuilder
@@ -51,6 +51,9 @@ class UserPrefs:
     threshold_multi: float
     whitelist: list[str]
     blacklist: list[str]
+    # tappe obbligatorie dei viaggi a tappe: ogni itinerario proposto le tocca
+    # tutte. Lista separata da whitelist/blacklist, che valgono sui voli singoli
+    multi_required: list[str]
 
     @property
     def all_origins(self) -> list[str]:
@@ -71,6 +74,9 @@ class SearchResult:
     multi_deals: list[EvaluatedOffer] = field(default_factory=list)
     total_offers: int = 0
     errors: list[str] = field(default_factory=list)
+    # tappe obbligatorie attive: servono al messaggio per spiegare una sezione
+    # "viaggi a tappe" vuota invece di lasciarla sparire in silenzio
+    multi_required: list[str] = field(default_factory=list)
 
 
 class DealEngine:
@@ -96,6 +102,9 @@ class DealEngine:
             threshold_multi=get("threshold_multi", cfg.threshold_multi),
             whitelist=[c.upper() for c in get("whitelist", cfg.whitelist)],
             blacklist=[c.upper() for c in get("blacklist", cfg.blacklist)],
+            multi_required=[
+                c.upper() for c in get("multi_required", cfg.multi_required)
+            ],
         )
 
     # --- fase 1: ricerca (condivisa fra tutti gli utenti) -------------------
@@ -144,13 +153,21 @@ class DealEngine:
         )
 
     def fetch_offers(
-        self, origins: list[str], multi_origins: list[str] | None = None
+        self,
+        origins: list[str],
+        multi_origins: list[str] | None = None,
+        required_sets: list[list[str]] | None = None,
     ) -> tuple[list[Offer], list[tuple[str, str]]]:
         """Interroga le API per gli aeroporti dati e registra i prezzi.
 
         `multi_origins` sono gli aeroporti su cui costruire anche gli itinerari
         a tappe (i "internazionali"): è un sottoinsieme di `origins`, perché il
         lungo raggio parte solo da lì.
+
+        `required_sets` sono i vincoli di tappa obbligatoria distinti fra gli
+        utenti: serve una ricerca per ognuno, perché il vincolo guida la beam
+        search e non si può applicare a posteriori. Utenti con lo stesso
+        vincolo (compreso "nessuno") condividono la stessa ricerca.
 
         Ritorna (offerte, errori); ogni errore è (origin, messaggio) così la
         fase di selezione può mostrare a ciascun utente solo i problemi dei
@@ -202,13 +219,21 @@ class DealEngine:
 
         builder = self._multi_builder()
         if builder is not None:
+            # de-duplica i vincoli: due utenti che chiedono le stesse tappe
+            # obbligatorie condividono una sola ricerca
+            wanted = required_sets if required_sets is not None else [[]]
+            distinct = {tuple(sorted({c.upper() for c in req})) for req in wanted}
             for origin in multi_origins if multi_origins is not None else origins:
-                try:
-                    offers.extend(builder.build(origin, date_from, date_to))
-                except Exception as exc:  # noqa: BLE001 - il multitratta non blocca il resto
-                    msg = f"multitratta da {origin}: {exc}"
-                    logger.error("Ricerca fallita: %s", msg)
-                    errors.append((origin, msg))
+                for req in sorted(distinct):
+                    try:
+                        offers.extend(
+                            builder.build(origin, date_from, date_to, required=list(req))
+                        )
+                    except Exception as exc:  # noqa: BLE001 - il multitratta non blocca il resto
+                        vincolo = f" via {', '.join(req)}" if req else ""
+                        msg = f"multitratta da {origin}{vincolo}: {exc}"
+                        logger.error("Ricerca fallita: %s", msg)
+                        errors.append((origin, msg))
 
         for offer in offers:
             self.storage.record_price(offer)
@@ -247,6 +272,7 @@ class DealEngine:
                 )
         result.deals = deals
         result.multi_deals = multi_deals
+        result.multi_required = list(prefs.multi_required)
         return result
 
     def search_for_user(
@@ -254,7 +280,9 @@ class DealEngine:
     ) -> SearchResult:
         """Ricerca completa per un singolo utente (comando /oggi, test)."""
         prefs = self.prefs_for(chat_id)
-        offers, errors = self.fetch_offers(prefs.all_origins, prefs.intl_origins)
+        offers, errors = self.fetch_offers(
+            prefs.all_origins, prefs.intl_origins, [prefs.multi_required]
+        )
         return self.select_for_user(prefs, offers, errors, mark_as_sent)
 
     def _origin_allowed(self, offer: Offer, prefs: UserPrefs) -> bool:
@@ -342,6 +370,11 @@ class DealEngine:
             stops = {leg.destination.upper() for leg in offer.stopovers}
             if stops & set(prefs.blacklist):
                 return False
+            # tappe obbligatorie: devono esserci TUTTE. Confronto per area
+            # metropolitana, così "NYC" è soddisfatto da un itinerario via JFK
+            for req in prefs.multi_required:
+                if not any(same_metro(req, stop) for stop in stops):
+                    return False
             return not prefs.whitelist or bool(stops & set(prefs.whitelist))
 
         dest = offer.destination.upper()

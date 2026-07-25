@@ -33,6 +33,9 @@ messaggio di domani, puoi rilanciarlo quante volte vuoi)
 /destinazioni add|remove XXX — gestisci la whitelist (vuota = tutte)
 /destinazioni block|unblock XXX — gestisci la blacklist
 /destinazioni reset — torna ai valori di default
+/tappe — tappe obbligatorie dei viaggi a tappe
+/tappe add|remove NYC — imponi (o togli) una città sul percorso
+/tappe reset — nessun vincolo di percorso
 /soglia — le tue soglie di prezzo
 /soglia europa|extra|multi|sconto N — imposta un parametro
 /stop — sospendi le notifiche giornaliere
@@ -62,6 +65,12 @@ Sono biglietti di sola andata concatenati: ogni tratta ha il suo link e si
 prenota a parte, quindi il prezzo mostrato è la somma delle tratte. Il
 criterio è la soglia <b>multi</b>, che vale sull'intero itinerario e non
 sul singolo volo.
+
+Con <b>/tappe add NYC</b> imponi una città sul percorso: da lì in poi ogni
+itinerario proposto ci passerà. È diverso da /destinazioni, che è una
+whitelist sui voli singoli — qui stai vincolando il percorso, non
+scegliendo la meta. Vincolare alza il prezzo, quindi potresti dover alzare
+anche /soglia multi.
 
 <b>Come funzionano le soglie</b>
 Un'offerta viene segnalata se il prezzo totale A/R è sotto la soglia
@@ -108,6 +117,7 @@ def build_application(config: Config, engine: DealEngine) -> Application:
     app.add_handler(CommandHandler("oggi", cmd_oggi))
     app.add_handler(CommandHandler("aeroporti", cmd_aeroporti))
     app.add_handler(CommandHandler("destinazioni", cmd_destinazioni))
+    app.add_handler(CommandHandler("tappe", cmd_tappe))
     app.add_handler(CommandHandler("soglia", cmd_soglia))
     app.add_handler(CommandHandler("utenti", cmd_utenti))
     app.add_handler(CommandHandler("approva", cmd_approva))
@@ -481,6 +491,102 @@ async def cmd_destinazioni(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     storage.set_user_setting(chat_id, "whitelist", whitelist)
     storage.set_user_setting(chat_id, "blacklist", blacklist)
     await update.message.reply_text(f"✅ Fatto: {action} {', '.join(codes)}")
+
+
+async def cmd_tappe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Tappe obbligatorie dei viaggi a tappe: ogni itinerario deve toccarle.
+
+    Separato da /destinazioni di proposito: quella è una whitelist sui voli
+    singoli ("proponimi solo queste mete"), questa è un vincolo di percorso
+    ("qualunque itinerario, ma deve passare di qui")."""
+    if not await _require_active(update, context):
+        return
+    config: Config = context.bot_data["config"]
+    engine: DealEngine = context.bot_data["engine"]
+    storage = engine.storage
+    chat_id = update.effective_chat.id
+    args = [a.upper() for a in context.args]
+    prefs = engine.prefs_for(chat_id)
+
+    if not args:
+        if prefs.multi_required:
+            elenco = "\n".join(
+                f"• {c} — {escape(airports.info(c)[0])}" for c in prefs.multi_required
+            )
+            testo = (
+                f"<b>Tappe obbligatorie</b>\n{elenco}\n\n"
+                "Ogni viaggio a tappe proposto passerà da "
+                + ("tutte queste città" if len(prefs.multi_required) > 1 else "questa città")
+                + "."
+            )
+        else:
+            testo = (
+                "<b>Tappe obbligatorie</b>\nNessuna: gli itinerari possono "
+                "passare ovunque."
+            )
+        await update.message.reply_html(
+            testo + "\n\nUsa: /tappe add NYC · /tappe remove NYC · /tappe reset"
+        )
+        return
+
+    action = args[0].lower()
+    codes = [c for c in args[1:] if len(c) == 3 and c.isalpha()]
+
+    if action == "reset":
+        storage.delete_user_setting(chat_id, "multi_required")
+        await update.message.reply_text(
+            "✅ Vincolo rimosso: gli itinerari possono passare ovunque."
+        )
+        return
+
+    if action not in {"add", "remove"} or not codes:
+        await update.message.reply_text(
+            "Uso: /tappe add|remove CODICE_IATA (es. /tappe add NYC)"
+        )
+        return
+
+    unknown = [c for c in codes if not airports.is_known(c)]
+    if unknown:
+        await update.message.reply_text(
+            f"❌ Codici IATA sconosciuti: {', '.join(unknown)}"
+        )
+        return
+
+    required = list(prefs.multi_required)
+    if action == "add":
+        required = sorted(set(required) | set(codes))
+    else:
+        required = [c for c in required if c not in codes]
+
+    if len(required) > config.multi_max_stops:
+        await update.message.reply_text(
+            f"❌ Troppe tappe obbligatorie: un itinerario ne ha al massimo "
+            f"{config.multi_max_stops}, ne hai chieste {len(required)}."
+        )
+        return
+
+    storage.set_user_setting(chat_id, "multi_required", required)
+    if not required:
+        await update.message.reply_text(
+            "✅ Nessuna tappa obbligatoria: gli itinerari possono passare ovunque."
+        )
+        return
+
+    dettaglio = ", ".join(f"{c} ({airports.info(c)[0]})" for c in required)
+    avvisi = []
+    bloccate = [c for c in required if c in prefs.blacklist]
+    if bloccate:
+        avvisi.append(
+            f"⚠️ {', '.join(bloccate)} è anche in blacklist (/destinazioni): "
+            "così non uscirà mai nessun itinerario."
+        )
+    avvisi.append(
+        "ℹ️ Vincolare il percorso alza il prezzo: se la sezione resta vuota, "
+        f"alza la soglia con /soglia multi (ora {prefs.threshold_multi:.0f}€)."
+    )
+    await update.message.reply_text(
+        f"✅ Tappe obbligatorie: {dettaglio}\n\n" + "\n".join(avvisi)
+    )
 
 
 async def cmd_soglia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

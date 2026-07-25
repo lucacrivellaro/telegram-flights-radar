@@ -103,6 +103,16 @@ def build_message(result: SearchResult, today: date | None = None) -> str:
             _fmt_multi(i, ev)
             for i, ev in enumerate(result.multi_deals, start=start)
         ]
+    elif result.multi_required:
+        # con tappe obbligatorie attive una sezione vuota sembrerebbe un guasto:
+        # meglio dire che il vincolo non è stato soddisfatto
+        tappe = ", ".join(escape(c) for c in result.multi_required)
+        blocks.append(
+            "🧭 <b>Viaggi a tappe</b>\nNessun itinerario che passi da "
+            f"<b>{tappe}</b> sotto soglia oggi.\n"
+            "Puoi allentare il vincolo con /tappe remove, oppure alzare la "
+            "soglia con /soglia multi."
+        )
 
     if result.deals or result.multi_deals:
         blocks.append(f"<i>{result.total_offers} tariffe analizzate.</i>")
