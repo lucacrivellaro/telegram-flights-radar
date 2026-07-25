@@ -35,6 +35,7 @@ messaggio di domani, puoi rilanciarlo quante volte vuoi)
 /destinazioni reset — torna ai valori di default
 /tappe — tappe obbligatorie dei viaggi a tappe
 /tappe add|remove NYC — imponi (o togli) una città sul percorso
+  (più città = basta passare da una qualsiasi)
 /tappe reset — nessun vincolo di percorso
 /soglia — le tue soglie di prezzo
 /soglia europa|extra|multi|sconto N — imposta un parametro
@@ -69,8 +70,10 @@ sul singolo volo.
 Con <b>/tappe add NYC</b> imponi una città sul percorso: da lì in poi ogni
 itinerario proposto ci passerà. È diverso da /destinazioni, che è una
 whitelist sui voli singoli — qui stai vincolando il percorso, non
-scegliendo la meta. Vincolare alza il prezzo, quindi potresti dover alzare
-anche /soglia multi.
+scegliendo la meta. Se ne aggiungi più di una valgono in <b>OR</b>: basta
+che l'itinerario ne tocchi una, quindi ogni città in più allarga le
+possibilità invece di restringerle. Vincolare alza il prezzo, quindi
+potresti dover alzare anche /soglia multi.
 
 <b>Come funzionano le soglie</b>
 Un'offerta viene segnalata se il prezzo totale A/R è sotto la soglia
@@ -515,9 +518,13 @@ async def cmd_tappe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             testo = (
                 f"<b>Tappe obbligatorie</b>\n{elenco}\n\n"
-                "Ogni viaggio a tappe proposto passerà da "
-                + ("tutte queste città" if len(prefs.multi_required) > 1 else "questa città")
-                + "."
+                + (
+                    "Ogni viaggio a tappe proposto passerà da <b>almeno una</b> "
+                    "di queste città (non da tutte): più ne aggiungi, più "
+                    "possibilità ci sono."
+                    if len(prefs.multi_required) > 1
+                    else "Ogni viaggio a tappe proposto passerà da questa città."
+                )
             )
         else:
             testo = (
@@ -558,13 +565,6 @@ async def cmd_tappe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     else:
         required = [c for c in required if c not in codes]
 
-    if len(required) > config.multi_max_stops:
-        await update.message.reply_text(
-            f"❌ Troppe tappe obbligatorie: un itinerario ne ha al massimo "
-            f"{config.multi_max_stops}, ne hai chieste {len(required)}."
-        )
-        return
-
     storage.set_user_setting(chat_id, "multi_required", required)
     if not required:
         await update.message.reply_text(
@@ -572,19 +572,25 @@ async def cmd_tappe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
 
-    dettaglio = ", ".join(f"{c} ({airports.info(c)[0]})" for c in required)
+    dettaglio = ", ".join(
+        f"{c} ({escape(airports.info(c)[0])})" for c in required
+    )
     avvisi = []
+    if len(required) > 1:
+        avvisi.append(
+            "ℹ️ Basta che un itinerario ne tocchi <b>una</b>, non tutte."
+        )
     bloccate = [c for c in required if c in prefs.blacklist]
     if bloccate:
         avvisi.append(
             f"⚠️ {', '.join(bloccate)} è anche in blacklist (/destinazioni): "
-            "così non uscirà mai nessun itinerario."
+            "da lì non uscirà mai un itinerario."
         )
     avvisi.append(
         "ℹ️ Vincolare il percorso alza il prezzo: se la sezione resta vuota, "
         f"alza la soglia con /soglia multi (ora {prefs.threshold_multi:.0f}€)."
     )
-    await update.message.reply_text(
+    await update.message.reply_html(
         f"✅ Tappe obbligatorie: {dettaglio}\n\n" + "\n".join(avvisi)
     )
 

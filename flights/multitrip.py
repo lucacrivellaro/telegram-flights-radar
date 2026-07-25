@@ -82,6 +82,9 @@ class MultiTripBuilder:
         self.extra_europe_only = extra_europe_only
         self.max_api_calls = max_api_calls
         self.max_workers = max_workers
+        # tetto effettivo di chiamate: `build()` lo scala col numero di tappe
+        # richieste, perché ognuna è una ricerca a sé
+        self._budget = max_api_calls
         # quante città sondare per trovarne alcune con un rientro reale
         self._verify_budget = 12
 
@@ -97,12 +100,12 @@ class MultiTripBuilder:
     def _get(self, url: str, params: dict) -> dict:
         """GET con contabilità del budget di chiamate. Ritorna {} se esaurito."""
         with self._lock:
-            if self._calls >= self.max_api_calls:
+            if self._calls >= self._budget:
                 if not self._budget_hit:
                     logger.warning(
                         "Multitratta: budget di %d chiamate API esaurito, "
                         "la ricerca si ferma qui (itinerari possibili non esplorati)",
-                        self.max_api_calls,
+                        self._budget,
                     )
                     self._budget_hit = True
                 return {}
@@ -291,29 +294,25 @@ class MultiTripBuilder:
         ]
         self._calls = 0
         self._budget_hit = False
+        # ogni città richiesta è una ricerca a sé, quindi il budget cresce con
+        # loro: in OR aggiungere una meta deve dare più possibilità, non meno
+        self._budget = self.max_api_calls * max(1, len(required))
         # le città con un collegamento diretto da casa: le rotte sono quasi
         # sempre bidirezionali, quindi è anche l'insieme da cui si può tornare.
         # Senza questo l'anello non si chiude: le catene più economiche finiscono
         # in città che verso un aeroporto piccolo (VRN, BGY) non volano.
         self._home_routes = set(self._discover(origin, _months(date_from, date_to)))
 
-        states = self._first_hops(origin, date_from, date_to, required)
-        if not states:
-            logger.info(
-                "Multitratta da %s: nessuna prima tappa utilizzabile%s",
-                origin,
-                f" fra le tappe obbligatorie {', '.join(required)}" if required else "",
-            )
-            return []
-
+        # una ricerca indipendente per ogni città richiesta. Con un beam solo,
+        # le catene verso la meta più economica scaccerebbero le altre e
+        # aggiungere una città *ridurrebbe* i risultati invece di aumentarli —
+        # l'opposto di quello che ci si aspetta da un OR. Le cache di scoperta
+        # e calendari sono condivise, quindi il costo reale non si moltiplica.
         itineraries: list[Offer] = []
-        while states:
-            depth = len(states[0].legs)
-            if depth >= self.min_stops:
-                itineraries.extend(self._close(states, origin, required))
-            if depth >= self.max_stops:
-                break
-            states = self._next_level(states, origin, required)
+        for vincolo in [[c] for c in required] or [[]]:
+            itineraries.extend(
+                self._search_chains(origin, date_from, date_to, vincolo)
+            )
 
         itineraries.sort(key=lambda o: o.price)
         logger.info(
@@ -325,6 +324,29 @@ class MultiTripBuilder:
         )
         return _dedupe_by_route(itineraries)
 
+    def _search_chains(
+        self, origin: str, date_from: date, date_to: date, required: list[str]
+    ) -> list[Offer]:
+        """Una beam search completa, con al più una tappa imposta."""
+        states = self._first_hops(origin, date_from, date_to, required)
+        if not states:
+            logger.info(
+                "Multitratta da %s: nessuna prima tappa utilizzabile%s",
+                origin,
+                f" verso {', '.join(required)}" if required else "",
+            )
+            return []
+
+        found: list[Offer] = []
+        while states:
+            depth = len(states[0].legs)
+            if depth >= self.min_stops:
+                found.extend(self._close(states, origin, required))
+            if depth >= self.max_stops:
+                break
+            states = self._next_level(states, origin, required)
+        return found
+
     def _first_hops(
         self, origin: str, date_from: date, date_to: date, required: list[str]
     ) -> list[_State]:
@@ -332,7 +354,8 @@ class MultiTripBuilder:
 
         Con tappe obbligatorie la prima è per forza una di quelle: partire
         altrove le farebbe scartare da `_prune`, che ordina per prezzo, e un
-        volo per New York non compete con uno per Tirana."""
+        volo per New York non compete con uno per Tirana. Valendo in OR, questo
+        basta a soddisfare il vincolo per l'intera catena."""
         if required:
             shortlist = required
         else:
@@ -360,6 +383,12 @@ class MultiTripBuilder:
                 )
             )
         states.sort(key=lambda s: s.price)
+        if required:
+            # valendo in OR, ogni città richiesta merita una catena: con il beam
+            # normale (4) la meta più economica si prenderebbe tutti i posti e
+            # le altre non verrebbero mai esplorate. Tetto a 6 per non far
+            # esplodere il costo delle espansioni successive
+            return states[: max(self.beam_width, min(len(states), 6))]
         return states[: self.beam_width]
 
     def _next_level(
@@ -372,32 +401,28 @@ class MultiTripBuilder:
             win = self._stay_window(state, closing=False)
             if win[0] > win[1]:
                 continue
-            mancanti = _missing(state, required)
-            if len(mancanti) >= self.max_stops - len(state.legs):
-                # i posti rimasti bastano appena alle tappe obbligatorie:
-                # niente deviazioni, o l'itinerario non sarebbe valido
-                shortlist = mancanti
-            else:
-                candidates = self._discover(state.city, _months(*win))
-                pool = [
-                    d
-                    for d in sorted(candidates, key=candidates.get)
-                    if self._acceptable(d, state.visited, home)
-                ]
-                # metà dei posti riservata alle città da cui si può tornare a
-                # casa, altrimenti la catena cresce verso vicoli ciechi
-                connected = [d for d in pool if d in self._home_routes]
-                quota = max(1, self.candidates // 2)
-                if required:
-                    # con una tappa imposta la catena è trascinata lontano da
-                    # casa: qui il rientro non si può dare per scontato, va
-                    # verificato o non si chiude nulla
-                    connected = self._with_return_home(
-                        connected[: self._verify_budget], home, win, quota
-                    )
-                shortlist = list(
-                    dict.fromkeys(mancanti + connected[:quota] + pool)
-                )[: self.candidates]
+            # nessun vincolo da propagare: le tappe obbligatorie valgono in OR
+            # e `_first_hops` ne ha già messa una all'inizio di ogni catena
+            candidates = self._discover(state.city, _months(*win))
+            pool = [
+                d
+                for d in sorted(candidates, key=candidates.get)
+                if self._acceptable(d, state.visited, home)
+            ]
+            # metà dei posti riservata alle città da cui si può tornare a
+            # casa, altrimenti la catena cresce verso vicoli ciechi
+            connected = [d for d in pool if d in self._home_routes]
+            quota = max(1, self.candidates // 2)
+            if required:
+                # con una tappa imposta la catena è trascinata lontano da
+                # casa: qui il rientro non si può dare per scontato, va
+                # verificato o non si chiude nulla
+                connected = self._with_return_home(
+                    connected[: self._verify_budget], home, win, quota
+                )
+            shortlist = list(dict.fromkeys(connected[:quota] + pool))[
+                : self.candidates
+            ]
             for dest in shortlist:
                 jobs.append((len(jobs), state.city, dest, win[0], win[1]))
                 owners[len(jobs) - 1] = state
@@ -427,8 +452,8 @@ class MultiTripBuilder:
         """Chiude l'anello: volo di rientro a casa dall'ultima tappa."""
         jobs, owners = [], {}
         for state in states:
-            if _missing(state, required):
-                continue  # mancano tappe obbligatorie: non è un itinerario valido
+            if not _satisfies(state, required):
+                continue  # non tocca nessuna tappa obbligatoria
             win = self._stay_window(state, closing=True)
             if win[0] > win[1]:
                 continue
@@ -513,16 +538,20 @@ def _parse_date(value: str | None) -> date | None:
         return None
 
 
-def _missing(state: _State, required: list[str]) -> list[str]:
-    """Le tappe obbligatorie non ancora toccate dalla catena.
+def _satisfies(state: _State, required: list[str]) -> bool:
+    """Se la catena tocca almeno una delle tappe obbligatorie.
 
-    Il confronto è per area metropolitana: chi chiede New York è servito da un
+    Più tappe valgono in OR, non in AND: chiedere New York *e* Bangkok nello
+    stesso viaggio non avrebbe quasi mai soluzione, mentre in OR ogni città
+    aggiunta allarga le possibilità invece di restringerle.
+
+    Il confronto è per area metropolitana: chi chiede NYC è servito da un
     itinerario che passa da JFK o EWR."""
-    return [
-        r
-        for r in required
-        if not any(same_metro(r, seen) for seen in state.visited)
-    ]
+    if not required:
+        return True
+    return any(
+        any(same_metro(r, seen) for seen in state.visited) for r in required
+    )
 
 
 def _is_new_place(dest: str, visited: frozenset[str], home: str) -> bool:

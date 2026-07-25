@@ -51,8 +51,9 @@ class UserPrefs:
     threshold_multi: float
     whitelist: list[str]
     blacklist: list[str]
-    # tappe obbligatorie dei viaggi a tappe: ogni itinerario proposto le tocca
-    # tutte. Lista separata da whitelist/blacklist, che valgono sui voli singoli
+    # tappe obbligatorie dei viaggi a tappe: ogni itinerario ne tocca almeno
+    # una (OR, non AND). Lista separata da whitelist/blacklist, che valgono
+    # sui voli singoli
     multi_required: list[str]
 
     @property
@@ -370,11 +371,16 @@ class DealEngine:
             stops = {leg.destination.upper() for leg in offer.stopovers}
             if stops & set(prefs.blacklist):
                 return False
-            # tappe obbligatorie: devono esserci TUTTE. Confronto per area
-            # metropolitana, così "NYC" è soddisfatto da un itinerario via JFK
-            for req in prefs.multi_required:
-                if not any(same_metro(req, stop) for stop in stops):
-                    return False
+            # tappe obbligatorie in OR: ne basta una. Chiederle tutte insieme
+            # non avrebbe quasi mai soluzione, così invece ogni città aggiunta
+            # allarga le possibilità. Confronto per area metropolitana, quindi
+            # "NYC" è soddisfatto da un itinerario via JFK
+            if prefs.multi_required and not any(
+                same_metro(req, stop)
+                for req in prefs.multi_required
+                for stop in stops
+            ):
+                return False
             return not prefs.whitelist or bool(stops & set(prefs.whitelist))
 
         dest = offer.destination.upper()

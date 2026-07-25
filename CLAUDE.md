@@ -187,20 +187,29 @@ soddisfare una tappa obbligatoria "NYC" con un itinerario via JFK.
 guida la beam search, NON è un filtro sui risultati — filtrare a posteriori
 darebbe sempre zero, perché la ricerca insegue le catene più economiche. La
 prima tappa è forzata a una delle obbligatorie (partire altrove le farebbe
-scartare da `_prune`, che ordina per prezzo: New York non compete con Tirana),
-le altre sono forzate quando i posti rimasti bastano appena a coprirle.
+scartare da `_prune`, che ordina per prezzo: New York non compete con Tirana).
 Siccome il vincolo entra nella ricerca, serve **una build per ogni insieme di
 tappe distinto** fra gli utenti attivi (`fetch_offers(required_sets=...)`):
 utenti con lo stesso vincolo condividono la ricerca.
+- Più tappe obbligatorie valgono in **OR**, ne basta una (`_satisfies`). Non è
+solo semantica: `build()` fa **una beam search indipendente per città** e
+scala `_budget` di conseguenza. Con un beam unico condiviso le catene verso la
+meta più economica scacciavano le altre e aggiungere una città *riduceva* i
+risultati — l'opposto di quello che un OR promette. Le cache di scoperta e
+calendari sono condivise fra le sotto-ricerche, quindi il costo reale non si
+moltiplica per intero (BGY con 3 città: 184 chiamate invece di 64×3).
 - Con tappe obbligatorie il rientro va **verificato** prima di allungare la
 catena (`_with_return_home`): `_home_routes` dice che casa vola verso quella
 città, ma è la cache dei prezzi minimi (una data sola) e il calendario del
 rientro su una finestra di 4 giorni è spesso vuoto. Da NYC le mete più
 economiche sono Orlando e Dallas, che verso MXP non hanno rientro; Miami e
-Boston sì, ma stanno più in basso nella lista per prezzo. Resa reale con
-`/tappe add NYC`: BGY 1 itinerario (874€, via Orlando/Los Angeles/Las Vegas),
-MXP 0 — e 874€ sta sopra `PRICE_THRESHOLD_MULTI=700`, quindi senza alzare la
-soglia l'utente vede solo il messaggio "nessun itinerario che passi da NYC".
+Boston sì, ma stanno più in basso nella lista per prezzo. Resa reale misurata:
+`NYC` → BGY 1 itinerario (874€, via Orlando/Los Angeles/Las Vegas), MXP 0;
+`DXB` → MXP 1 (430€, via Riyadh/Jeddah), BGY 0; `BKK` → nessuno. Vincolare il
+percorso taglia molto la resa e alza i prezzi: 874€ sta sopra
+`PRICE_THRESHOLD_MULTI=700`, quindi senza alzare la soglia l'utente vede solo
+il messaggio "nessun itinerario che passi da NYC" (che è voluto: una sezione
+vuota sembrerebbe un guasto).
 - L'API Ryanair è non ufficiale: nessun rate limit documentato, può cambiare o
 bloccare senza preavviso (User-Agent browser già impostato nel client).
 - La media storica per rotta diventa attendibile solo dopo `MIN_HISTORY_SAMPLES`

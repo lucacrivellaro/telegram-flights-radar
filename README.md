@@ -51,10 +51,13 @@ iscrizioni vanno approvate dall'admin.
 - Con `/tappe add NYC` si impone una città sul percorso: ogni itinerario
   proposto ci passerà. Non è un filtro applicato ai risultati — la ricerca è
   una beam search che insegue le catene più economiche, e a New York non
-  arriverebbe mai — ma un vincolo che guida la ricerca. Vincolare il percorso
-  riduce molto il numero di itinerari trovati e ne alza il prezzo, quindi di
+  arriverebbe mai — ma un vincolo che guida la ricerca. Più città valgono in
+  **OR**: basta che l'itinerario ne tocchi una, quindi ogni aggiunta allarga le
+  possibilità (ciascuna ottiene una ricerca indipendente). Vincolare il
+  percorso riduce molto il numero di itinerari e ne alza il prezzo, quindi di
   solito va alzata anche `/soglia multi`. Se nessun itinerario soddisfa il
-  vincolo, il messaggio lo dice esplicitamente.
+  vincolo, il messaggio lo dice esplicitamente invece di mostrare una sezione
+  vuota.
 - Le offerte già inviate a un utente non gli vengono ripetute per
   `RESEND_COOLDOWN_DAYS` giorni, a meno che il prezzo non cali di oltre il 10%.
 - **Multi-utente**: chi scrive `/start` al bot entra in lista d'attesa;
@@ -134,6 +137,7 @@ utente modifica solo le proprie.
 | `/destinazioni reset` | Torna ai valori del `.env` |
 | `/tappe` | Mostra le tappe obbligatorie dei viaggi a tappe |
 | `/tappe add NYC` | Ogni itinerario proposto dovrà passare da New York |
+| `/tappe add DXB` | Con più città vale l'OR: basta passare da una qualsiasi |
 | `/tappe remove NYC` | Toglie il vincolo su una città |
 | `/tappe reset` | Nessun vincolo di percorso |
 | `/soglia` | Mostra le soglie attuali |

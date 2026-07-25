@@ -107,11 +107,15 @@ def build_message(result: SearchResult, today: date | None = None) -> str:
         # con tappe obbligatorie attive una sezione vuota sembrerebbe un guasto:
         # meglio dire che il vincolo non è stato soddisfatto
         tappe = ", ".join(escape(c) for c in result.multi_required)
+        via = (
+            f"da nessuna di queste città (<b>{tappe}</b>)"
+            if len(result.multi_required) > 1
+            else f"da <b>{tappe}</b>"
+        )
         blocks.append(
-            "🧭 <b>Viaggi a tappe</b>\nNessun itinerario che passi da "
-            f"<b>{tappe}</b> sotto soglia oggi.\n"
-            "Puoi allentare il vincolo con /tappe remove, oppure alzare la "
-            "soglia con /soglia multi."
+            f"🧭 <b>Viaggi a tappe</b>\nNessun itinerario che passi {via} "
+            "sotto soglia oggi.\nPuoi allentare il vincolo con /tappe remove, "
+            "oppure alzare la soglia con /soglia multi."
         )
 
     if result.deals or result.multi_deals:
