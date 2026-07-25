@@ -60,8 +60,10 @@ intercontinentali
 <b>🧭 Viaggi a tappe</b>
 In fondo al messaggio trovi fino a {multi_top_n} itinerari a più tappe:
 partenza da un aeroporto di lungo raggio, {multi_min_stops}-{multi_max_stops}
-città intermedie <b>fuori dall'Europa</b> con {multi_min_stay}-{multi_max_stay}
-notti ciascuna e rientro, entro {multi_max_trip_days} giorni totali.
+città intermedie <b>fuori dall'Europa</b> e rientro, per un viaggio di
+{multi_min_trip_days}-{multi_max_trip_days} giorni. Ogni sosta dura almeno
+{multi_min_stay} notti e non ha un tetto proprio: può arrivare a coprire
+tutto il viaggio, purché resti nei {multi_max_trip_days} giorni.
 Sono biglietti di sola andata concatenati: ogni tratta ha il suo link e si
 prenota a parte, quindi il prezzo mostrato è la somma delle tratte. Il
 criterio è la soglia <b>multi</b>, che vale sull'intero itinerario e non
@@ -337,7 +339,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         multi_min_stops=config.multi_min_stops,
         multi_max_stops=config.multi_max_stops,
         multi_min_stay=config.multi_min_stay,
-        multi_max_stay=config.multi_max_stay,
+        multi_min_trip_days=config.multi_min_trip_days,
         multi_max_trip_days=config.multi_max_trip_days,
     )
     if _is_admin(update, config):

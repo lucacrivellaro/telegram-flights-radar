@@ -60,7 +60,6 @@ class MultiTripBuilder:
         min_stops: int = 2,
         max_stops: int = 4,
         min_stay: int = 2,
-        max_stay: int = 5,
         max_trip_days: int = 20,
         min_trip_days: int = 0,
         beam_width: int = 4,
@@ -75,7 +74,6 @@ class MultiTripBuilder:
         self.min_stops = max(1, min_stops)
         self.max_stops = max(self.min_stops, max_stops)
         self.min_stay = min_stay
-        self.max_stay = max(min_stay, max_stay)
         self.max_trip_days = max_trip_days
         self.min_trip_days = min_trip_days
         self.beam_width = beam_width
@@ -245,7 +243,7 @@ class MultiTripBuilder:
         economiche sono Orlando e Dallas, che verso Milano non hanno rientro;
         Miami e Boston sì, ma stanno più in basso nella lista per prezzo.
         Senza questo controllo la catena cresce e poi non si chiude."""
-        months = _months(win[0], win[1] + timedelta(days=self.max_stay))
+        months = _months(win[0], win[1] + timedelta(days=self.max_trip_days))
         # prefetch in parallelo: i calendari finiscono in cache e le verifiche
         # qui sotto (e la chiusura vera) non ripagano la latenza di rete
         with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
@@ -268,17 +266,22 @@ class MultiTripBuilder:
     def _stay_window(self, state: _State, closing: bool) -> tuple[date, date]:
         """Finestra di ripartenza da una tappa: sosta min-max notti, senza
         sforare il tetto di giorni totali (lasciando spazio al rientro)."""
+        first = state.legs[0].depart_date
         start = state.arrival + timedelta(days=self.min_stay)
-        end = state.arrival + timedelta(days=self.max_stay)
-        budget_days = self.max_trip_days if closing else self.max_trip_days - self.min_stay
-        end = min(end, state.legs[0].depart_date + timedelta(days=budget_days))
-        if closing and self.min_trip_days:
-            # il rientro non può essere prima della durata minima: si cerca
-            # direttamente un volo più in là invece di scartare dopo
-            start = max(
-                start,
-                state.legs[0].depart_date + timedelta(days=self.min_trip_days),
-            )
+        if closing:
+            end = first + timedelta(days=self.max_trip_days)
+            if self.min_trip_days:
+                # il rientro non può essere prima della durata minima: si cerca
+                # direttamente un volo più in là invece di scartare dopo
+                start = max(start, first + timedelta(days=self.min_trip_days))
+        else:
+            # nessun tetto per singola sosta: la durata di una tappa è limitata
+            # solo dai giorni totali. Vanno però riservate le notti minime per
+            # le tappe ancora necessarie e per il rientro, altrimenti una prima
+            # sosta lunghissima consuma il budget e l'anello non si chiude più
+            mancanti = max(0, self.min_stops - len(state.legs))
+            riserva = (mancanti + 1) * self.min_stay
+            end = first + timedelta(days=self.max_trip_days - riserva)
         return start, end
 
     # --- beam search ----------------------------------------------------------

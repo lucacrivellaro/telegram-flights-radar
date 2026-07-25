@@ -46,8 +46,9 @@ iscrizioni vanno approvate dall'admin.
   Miami a 507€ (0.92). I posti che una fascia non riempie passano all'altra.
 - **🧭 Viaggi a tappe** (multitratta): in fondo al messaggio il bot aggiunge
   fino a `MULTI_TOP_N` itinerari a più tappe — da un aeroporto di lungo raggio
-  → 2-4 città intermedie **fuori dall'Europa** con 2-5 notti di sosta ciascuna
-  → rientro, entro `MULTI_MAX_TRIP_DAYS` giorni.
+  → 2-4 città intermedie **fuori dall'Europa** → rientro, per un viaggio di
+  `MULTI_MIN_TRIP_DAYS`-`MULTI_MAX_TRIP_DAYS` giorni (10-20). Ogni sosta dura
+  almeno 2 notti e non ha un tetto proprio.
   Nessuna API gratuita vende itinerari multi-city, quindi il bot li **compone**
   concatenando biglietti di sola andata: ogni tratta ha il suo link e si
   prenota a parte, il prezzo mostrato è la somma. Hanno una soglia dedicata sul
@@ -236,7 +237,7 @@ file `.env`:
 | `MULTI_TOP_N` | Itinerari a tappe aggiunti in fondo al messaggio, oltre a `TOP_N` (default `2`). |
 | `PRICE_THRESHOLD_MULTI` | Soglia in € sul **totale** dell'itinerario a tappe (default `700`). |
 | `MULTI_MIN_STOPS` / `MULTI_MAX_STOPS` | Città intermedie per itinerario, casa esclusa (default `2`-`4`). |
-| `MULTI_MIN_STAY_NIGHTS` / `MULTI_MAX_STAY_NIGHTS` | Notti di sosta in ogni città (default `2`-`7`). Il massimo è legato a `MULTI_MIN_TRIP_DAYS`: con soste corte un viaggio lungo non si compone. |
+| `MULTI_MIN_STAY_NIGHTS` | Notti minime di sosta in ogni città (default `2`). Non c'è un massimo per tappa: la sosta è limitata solo dai giorni totali. |
 | `MULTI_MIN_TRIP_DAYS` / `MULTI_MAX_TRIP_DAYS` | Durata dell'intero viaggio in giorni (default `10`-`20`). Il minimo evita intercontinentali lampo dove il volo dura quanto il viaggio. |
 | `MULTI_EXTRA_EUROPE_ONLY` | `true` per accettare come tappe solo mete fuori dall'Europa (default `true`). |
 | `MULTI_REQUIRED_STOPS` | Tappe obbligatorie di default, CSV IATA (vuota = nessun vincolo). Personalizzabile per utente con `/tappe`. |

@@ -197,10 +197,14 @@ usa solo se `not is_short_haul`).
 uscivano itinerari tipo MXP→Bali(2n)→Singapore(2n)→MXP in 4 giorni totali con
 ~48h di volo (MXP→DPS 28h, SIN→MXP 17h). Il vincolo è nella finestra di
 chiusura (`_stay_window(closing=True)`), non un filtro finale, così la ricerca
-cerca direttamente un rientro più in là. ⚠️ È **accoppiato a
-`multi_max_stay`**: con soste da 5 notti un itinerario a 2 tappe dovrebbe fare
-esattamente 5+5 e quasi nulla passa (4 itinerari); a 7 notti ne passano 13.
-Se si alza `MULTI_MIN_TRIP_DAYS`, va alzata anche la sosta massima.
+cerca direttamente un rientro più in là.
+- **Nessun tetto di notti per singola tappa** (rimosso il 2026-07-25): un tetto
+per tappa entrava in conflitto con `multi_min_trip_days` (con max 5 notti un
+itinerario a 2 tappe doveva fare esattamente 5+5 e passavano 4 itinerari; a 7
+ne passavano 13). Ora una sosta è limitata solo dai giorni totali. In cambio
+`_stay_window(closing=False)` deve **riservare** `(tappe_mancanti + 1) *
+min_stay` giorni: con finestre larghe una prima sosta lunghissima si mangiava
+il budget e l'anello non si chiudeva più.
 - Un tetto sulla durata della singola tratta **non è applicabile**: oggi tutti
 gli itinerari costruiti hanno almeno una tratta oltre le 24h (viste fino a
 50h10 con 3 scali), quindi filtrarle svuoterebbe la sezione. Per questo il
