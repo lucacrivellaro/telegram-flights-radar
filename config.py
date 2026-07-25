@@ -57,8 +57,15 @@ class Config:
     multi_min_stops: int = 2
     multi_max_stops: int = 4
     multi_min_stay: int = 2
-    multi_max_stay: int = 5
+    # 7 e non 5: con la durata minima di 10 giorni, soste da 5 notti obbligano
+    # un itinerario a 2 tappe a fare esattamente 5+5 e quasi nulla passa
+    # (misurato: 4 itinerari con max 5 notti, 13 con max 7)
+    multi_max_stay: int = 7
     multi_max_trip_days: int = 20
+    # durata minima: senza, uscivano Milano→Bali→Singapore→Milano in 4 giorni,
+    # con ~48h di volo su 4. Un intercontinentale a tappe ha senso solo se il
+    # tempo a terra supera quello in aria
+    multi_min_trip_days: int = 10
     # sulle rotte intercontinentali pretendere tratte dirette azzera la resa
     # (VCE: 0 itinerari con i diretti, 3 ammettendo gli scali)
     multi_direct_only: bool = False
@@ -111,8 +118,9 @@ class Config:
             multi_min_stops=int(os.getenv("MULTI_MIN_STOPS", "2")),
             multi_max_stops=int(os.getenv("MULTI_MAX_STOPS", "4")),
             multi_min_stay=int(os.getenv("MULTI_MIN_STAY_NIGHTS", "2")),
-            multi_max_stay=int(os.getenv("MULTI_MAX_STAY_NIGHTS", "5")),
+            multi_max_stay=int(os.getenv("MULTI_MAX_STAY_NIGHTS", "7")),
             multi_max_trip_days=int(os.getenv("MULTI_MAX_TRIP_DAYS", "20")),
+            multi_min_trip_days=int(os.getenv("MULTI_MIN_TRIP_DAYS", "10")),
             multi_direct_only=_bool(os.getenv("MULTI_DIRECT_ONLY", "false")),
             multi_extra_europe_only=_bool(
                 os.getenv("MULTI_EXTRA_EUROPE_ONLY", "true")

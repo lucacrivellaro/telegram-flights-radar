@@ -236,8 +236,8 @@ file `.env`:
 | `MULTI_TOP_N` | Itinerari a tappe aggiunti in fondo al messaggio, oltre a `TOP_N` (default `2`). |
 | `PRICE_THRESHOLD_MULTI` | Soglia in € sul **totale** dell'itinerario a tappe (default `700`). |
 | `MULTI_MIN_STOPS` / `MULTI_MAX_STOPS` | Città intermedie per itinerario, casa esclusa (default `2`-`4`). |
-| `MULTI_MIN_STAY_NIGHTS` / `MULTI_MAX_STAY_NIGHTS` | Notti di sosta in ogni città (default `2`-`5`). |
-| `MULTI_MAX_TRIP_DAYS` | Durata massima dell'intero viaggio in giorni (default `20`). |
+| `MULTI_MIN_STAY_NIGHTS` / `MULTI_MAX_STAY_NIGHTS` | Notti di sosta in ogni città (default `2`-`7`). Il massimo è legato a `MULTI_MIN_TRIP_DAYS`: con soste corte un viaggio lungo non si compone. |
+| `MULTI_MIN_TRIP_DAYS` / `MULTI_MAX_TRIP_DAYS` | Durata dell'intero viaggio in giorni (default `10`-`20`). Il minimo evita intercontinentali lampo dove il volo dura quanto il viaggio. |
 | `MULTI_EXTRA_EUROPE_ONLY` | `true` per accettare come tappe solo mete fuori dall'Europa (default `true`). |
 | `MULTI_REQUIRED_STOPS` | Tappe obbligatorie di default, CSV IATA (vuota = nessun vincolo). Personalizzabile per utente con `/tappe`. |
 | `MULTI_DIRECT_ONLY` | `true` per accettare solo tratte dirette fra le tappe (default `false`: sulle rotte intercontinentali azzererebbe la resa). |

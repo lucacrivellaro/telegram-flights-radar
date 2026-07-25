@@ -146,6 +146,7 @@ class DealEngine:
             min_stay=cfg.multi_min_stay,
             max_stay=cfg.multi_max_stay,
             max_trip_days=cfg.multi_max_trip_days,
+            min_trip_days=cfg.multi_min_trip_days,
             beam_width=cfg.multi_beam_width,
             candidates=cfg.multi_candidates,
             direct_only=cfg.multi_direct_only,

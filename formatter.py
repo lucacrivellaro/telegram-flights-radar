@@ -44,10 +44,18 @@ def _fmt_multi(index: int, ev: EvaluatedOffer) -> str:
     ]
     for n, leg in enumerate(o.legs, start=1):
         sosta = f" · 🛏 {_fmt_nights(leg.nights)}" if leg.nights else " · 🏠 rientro"
+        # la durata è decisiva su queste tratte: una singola può valere 50 ore
+        # con 3 scali, e senza vederla l'itinerario sembra un affare
+        durata = ""
+        if leg.duration_minutes:
+            ore, minuti = divmod(leg.duration_minutes, 60)
+            durata = f" · {ore}h{minuti:02d}"
+            if leg.stops:
+                durata += f"/{leg.stops} scal{'o' if leg.stops == 1 else 'i'}"
         lines.append(
             f"   {n}. <a href=\"{leg.link}\">{_fmt_date(leg.depart_date)}</a> "
             f"{escape(leg.origin)} → {escape(leg.dest_city)} ({escape(leg.destination)})"
-            f" · {leg.price:.0f} €{sosta}"
+            f" · {leg.price:.0f} €{durata}{sosta}"
         )
     lines.append(f"   💡 {escape(ev.reason)}")
     return "\n".join(lines)

@@ -193,6 +193,19 @@ vuoti, guardare lì prima che alle soglie.
 a 1594€ (Tokyo). A 550€ ne passavano **zero**, a 900€ ne passano 5 — bacino
 sufficiente per 2 posti. La soglia tocca solo questa fascia (`_evaluate` la
 usa solo se `not is_short_haul`).
+- **Durata minima del viaggio** (`multi_min_trip_days=10`, 2026-07-25): senza,
+uscivano itinerari tipo MXP→Bali(2n)→Singapore(2n)→MXP in 4 giorni totali con
+~48h di volo (MXP→DPS 28h, SIN→MXP 17h). Il vincolo è nella finestra di
+chiusura (`_stay_window(closing=True)`), non un filtro finale, così la ricerca
+cerca direttamente un rientro più in là. ⚠️ È **accoppiato a
+`multi_max_stay`**: con soste da 5 notti un itinerario a 2 tappe dovrebbe fare
+esattamente 5+5 e quasi nulla passa (4 itinerari); a 7 notti ne passano 13.
+Se si alza `MULTI_MIN_TRIP_DAYS`, va alzata anche la sosta massima.
+- Un tetto sulla durata della singola tratta **non è applicabile**: oggi tutti
+gli itinerari costruiti hanno almeno una tratta oltre le 24h (viste fino a
+50h10 con 3 scali), quindi filtrarle svuoterebbe la sezione. Per questo il
+messaggio mostra durata e scali di ogni tratta: il problema si vede invece di
+restare nascosto dietro un prezzo basso.
 - `airports.same_metro()` evita tappe a due passi da casa (MIL partendo da BGY):
 il confronto sui nomi non basta, MIL="Milano" ma MXP="Milan". Serve anche a
 soddisfare una tappa obbligatoria "NYC" con un itinerario via JFK.
