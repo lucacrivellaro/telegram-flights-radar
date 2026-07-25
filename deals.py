@@ -175,6 +175,15 @@ class DealEngine:
         suoi aeroporti."""
         date_from = date.today() + timedelta(days=1)
         date_to = date.today() + timedelta(days=self.config.search_days_ahead)
+        # il lungo raggio guarda più in là: stessa ampiezza di finestra, ma
+        # spostata in avanti di `longhaul_start_days` (0 = identica all'Europa)
+        lh_from = date_from + timedelta(days=self.config.longhaul_start_days)
+        lh_to = lh_from + (date_to - date_from)
+        if self.config.longhaul_start_days:
+            logger.info(
+                "Finestre di ricerca: Europa %s→%s · lungo raggio %s→%s",
+                date_from, date_to, lh_from, lh_to,
+            )
 
         offers: list[Offer] = []
         errors: list[tuple[str, str]] = []
@@ -204,14 +213,19 @@ class DealEngine:
             )
             for origin in multi_origins if multi_origins is not None else origins:
                 try:
+                    trovate = tp.search_round_trip_direct(
+                        origin,
+                        lh_from,
+                        lh_to,
+                        self.config.min_trip_nights,
+                        self.config.max_trip_nights,
+                    )
+                    # solo lungo raggio: questa ricerca usa la finestra spostata,
+                    # e una meta europea presa da qui arriverebbe con date fuori
+                    # dai 45 giorni previsti per l'Europa. Le europee dirette le
+                    # coprono già Ryanair e /v2/prices/latest, sulla loro finestra
                     offers.extend(
-                        tp.search_round_trip_direct(
-                            origin,
-                            date_from,
-                            date_to,
-                            self.config.min_trip_nights,
-                            self.config.max_trip_nights,
-                        )
+                        o for o in trovate if not is_short_haul(o.destination)
                     )
                 except Exception as exc:  # noqa: BLE001
                     msg = f"travelpayouts da {origin} (A/R diretti): {exc}"
@@ -228,7 +242,7 @@ class DealEngine:
                 for req in sorted(distinct):
                     try:
                         offers.extend(
-                            builder.build(origin, date_from, date_to, required=list(req))
+                            builder.build(origin, lh_from, lh_to, required=list(req))
                         )
                     except Exception as exc:  # noqa: BLE001 - il multitratta non blocca il resto
                         vincolo = f" via {', '.join(req)}" if req else ""

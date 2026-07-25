@@ -16,6 +16,11 @@ iscrizioni vanno approvate dall'admin.
 - Il bot cerca **solo offerte andata/ritorno** (soggiorni da `MIN_TRIP_NIGHTS`
   a `MAX_TRIP_NIGHTS` notti, default 3-10): tutte le soglie sono quindi sul
   prezzo totale della combinazione, non a tratta.
+- **Due finestre temporali**: l'Europa guarda i prossimi `SEARCH_DAYS_AHEAD`
+  giorni (45), il lungo raggio la stessa ampiezza ma spostata avanti di
+  `LONGHAUL_START_DAYS` (60) — un intercontinentale si prenota con mesi di
+  anticipo. Misurato: spostando a +60 le A/R dirette extra-Europa passano da 9
+  a 26 e il minimo da 583€ a 313€.
 - **Due liste di aeroporti di partenza**: `ORIGIN_AIRPORTS` (default
   `VRN,BGY`) per le mete europee/corto raggio e `INTL_ORIGIN_AIRPORTS`
   (default `VCE,BGY,MXP`) per il lungo raggio — offerte extra-Europa e viaggi
@@ -213,6 +218,7 @@ file `.env`:
 | `ORIGIN_AIRPORTS` | Aeroporti per le mete europee, CSV di codici IATA (default `VRN,BGY`). |
 | `INTL_ORIGIN_AIRPORTS` | Aeroporti per il lungo raggio — extra-Europa e viaggi a tappe (default `VCE,BGY,MXP`). |
 | `SEARCH_DAYS_AHEAD` | Finestra di ricerca: da domani a N giorni avanti (default `45`). |
+| `LONGHAUL_START_DAYS` | Di quanti giorni spostare in avanti la finestra del lungo raggio — extra-Europa A/R e viaggi a tappe (default `60`; `0` = come l'Europa). |
 | `DESTINATIONS_WHITELIST` | Destinazioni ammesse, CSV IATA (vuota = tutte). |
 | `DESTINATIONS_BLACKLIST` | Destinazioni escluse, CSV IATA. |
 | `MIN_TRIP_NIGHTS` | Notti minime di soggiorno (default `3`). |

@@ -91,7 +91,8 @@ nuovo utente). Consigliata:
 `TRAVELPAYOUTS_TOKEN` (senza → solo Ryanair diretti). Opzionali:
 `TRAVELPAYOUTS_MARKER`, `ORIGIN_AIRPORTS` (corto raggio),
 `INTL_ORIGIN_AIRPORTS` (lungo raggio: extra-Europa A/R e multitratta),
-`SEARCH_DAYS_AHEAD`,
+`SEARCH_DAYS_AHEAD`, `LONGHAUL_START_DAYS` (sposta avanti la finestra del
+lungo raggio),
 `DESTINATIONS_WHITELIST/BLACKLIST`,
 `PRICE_THRESHOLD_EUROPE_RT/EXTRA_RT` (soglie A/R, prezzo totale),
 `PRICE_THRESHOLD_MULTI` (soglia sul totale di un itinerario a tappe),
@@ -161,6 +162,18 @@ con `multi_direct_only=True` la resa crollava (VCE 0 itinerari, MXP 3 a
 intercontinentali gli scali sono la norma. Con gli scali ammessi: VCE 3
 itinerari, MXP da 503€, ~120 chiamate API e ~18s per aeroporto. Prezzi reali
 360-550€: da qui `PRICE_THRESHOLD_MULTI=700`.
+- **Due finestre temporali** (`longhaul_start_days=60`, 2026-07-25): Europa
+`oggi+1 → +45gg`, lungo raggio la stessa ampiezza spostata avanti di 60
+giorni. Vale solo per `search_round_trip_direct()` e il multitratta: le
+extra-Europa singole vengono di fatto solo da lì, perché quelle con scalo le
+scarta `_vuole_diretto()`. Misurato spostando la finestra: le A/R dirette
+extra-Europa migliorano molto (+0gg → 9 offerte, min 583€; +60gg → 26, min
+313€; +90gg → 25, mediana migliore), i viaggi a tappe invece **peggiorano**
+(18 → 12 → 11 itinerari) perché la cache Travelpayouts è più densa sulle date
+vicine. 60 è il compromesso. Il calo a +120/+150 è il periodo natalizio, si
+sposta col passare dei giorni. Non è per utente: cambia cosa si chiede alle
+API, quindi ogni valore distinto sarebbe una ricerca in più (come
+`required_sets`).
 - **Quota per fascia** (`_apply_quota`, `TOP_N_EXTRA=2`): senza, le offerte
 extra-Europa A/R non entrerebbero quasi mai nelle TOP_N, perché lo score è
 `prezzo/soglia` della fascia e un A/R Europa a 43€ (0.61) batte Miami a 507€

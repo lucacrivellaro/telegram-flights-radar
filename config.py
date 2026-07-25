@@ -67,6 +67,16 @@ class Config:
     multi_candidates: int = 6
     multi_max_api_calls: int = 250
     search_days_ahead: int = 45
+    # Da quanti giorni da oggi parte la finestra del LUNGO RAGGIO (extra-Europa
+    # A/R e viaggi a tappe): larga quanto `search_days_ahead`, solo spostata in
+    # avanti. 0 = come l'Europa. Misurato sui dati veri: a +60 le A/R dirette
+    # extra-Europa passano da 9 a 26 e il minimo da 583€ a 313€, mentre i
+    # viaggi a tappe calano da 18 a 12 itinerari (la cache Travelpayouts è più
+    # densa sulle date vicine) — 60 è il compromesso, i 2 posti giornalieri
+    # restano ampiamente coperti da entrambi.
+    # Non è personalizzabile per utente di proposito: cambia *cosa si chiede
+    # alle API*, quindi ogni valore distinto sarebbe una ricerca in più.
+    longhaul_start_days: int = 60
     whitelist: list[str] = field(default_factory=list)
     blacklist: list[str] = field(default_factory=list)
     # tappe obbligatorie di default per i viaggi a tappe (vuota = nessun vincolo)
@@ -111,6 +121,7 @@ class Config:
             multi_candidates=int(os.getenv("MULTI_CANDIDATES", "6")),
             multi_max_api_calls=int(os.getenv("MULTI_MAX_API_CALLS", "250")),
             search_days_ahead=int(os.getenv("SEARCH_DAYS_AHEAD", "45")),
+            longhaul_start_days=int(os.getenv("LONGHAUL_START_DAYS", "60")),
             whitelist=_csv(os.getenv("DESTINATIONS_WHITELIST", "")),
             blacklist=_csv(os.getenv("DESTINATIONS_BLACKLIST", "")),
             multi_required=_csv(os.getenv("MULTI_REQUIRED_STOPS", "")),
