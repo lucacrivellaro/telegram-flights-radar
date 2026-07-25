@@ -73,6 +73,12 @@ preferenze già salvate restano valide.
 `.env`** (aeroporti, soglie, whitelist, blacklist — modificate via comandi
 bot, scoped per `chat_id`; il `.env` è solo il default per i nuovi utenti).
 Se una soglia sembra ignorata, controllare lì prima di toccare il codice.
+- `/oggi` **non** marca le offerte come inviate (`run_search_and_send` passa
+`mark_as_sent=False`): è una ricerca a richiesta, e marcarla brucerebbe le
+offerte per `resend_cooldown_days`, rendendo ogni /oggi successivo più povero
+del precedente. Solo l'invio giornaliero (`select_for_user` dallo scheduler)
+marca. Conseguenza voluta: un'offerta vista con /oggi può ricomparire nel
+messaggio del giorno dopo.
 - Le API si interrogano una volta per aeroporto distinto (unione fra tutti
 gli utenti attivi), mai una volta per utente: `fetch_offers()` è condivisa,
 `select_for_user()` è la parte personalizzata.

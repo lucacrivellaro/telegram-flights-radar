@@ -112,7 +112,7 @@ utente modifica solo le proprie.
 |---|---|
 | `/start` | Richiede l'iscrizione (o riattiva le notifiche dopo /stop) |
 | `/stop` | Sospende le notifiche giornaliere |
-| `/oggi` | Ricerca immediata e invio offerte |
+| `/oggi` | Ricerca immediata e invio offerte. Non marca le offerte come inviate: si può rilanciare senza impoverire il messaggio giornaliero |
 | `/aeroporti` | Mostra le due liste di aeroporti di partenza |
 | `/aeroporti add TRN` | Aggiunge un aeroporto alla lista Europa |
 | `/aeroporti remove BGY` | Rimuove un aeroporto (almeno uno deve restare) |

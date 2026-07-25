@@ -23,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 HELP_TEXT = """<b>Radar voli — comandi</b>
 
-/oggi — cerca subito le offerte
+/oggi — cerca subito le offerte (è una prova: non toglie nulla al
+messaggio di domani, puoi rilanciarlo quante volte vuoi)
 /aeroporti — i tuoi aeroporti di partenza
 /aeroporti add|remove XXX — gestisci quelli per l'Europa (es. VRN)
 /aeroporti intl add|remove XXX — gestisci quelli per il lungo raggio
@@ -118,10 +119,18 @@ async def _on_startup(app: Application) -> None:
     logger.info("Bot avviato")
 
 
-async def run_search_and_send(app: Application, chat_id: str | int) -> None:
-    """Esegue la ricerca per l'utente (bloccante, in thread) e invia il risultato."""
+async def run_search_and_send(
+    app: Application, chat_id: str | int, mark_as_sent: bool = False
+) -> None:
+    """Esegue la ricerca per l'utente (bloccante, in thread) e invia il risultato.
+
+    `mark_as_sent=False` di default perché questa è la strada di /oggi, che è
+    una ricerca a richiesta: marcarle brucerebbe le offerte per
+    `resend_cooldown_days` giorni, e due /oggi di fila darebbero risultati via
+    via più poveri. L'invio giornaliero passa invece da `select_for_user()` e
+    continua a marcare, che è l'unico dedup che serve davvero."""
     engine: DealEngine = app.bot_data["engine"]
-    result = await asyncio.to_thread(engine.search_for_user, chat_id)
+    result = await asyncio.to_thread(engine.search_for_user, chat_id, mark_as_sent)
     await app.bot.send_message(
         chat_id=chat_id,
         text=build_message(result),
