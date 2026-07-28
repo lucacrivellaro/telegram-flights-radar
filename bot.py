@@ -43,7 +43,8 @@ messaggio di domani, puoi rilanciarlo quante volte vuoi)
 /help — questo messaggio
 
 Ogni giorno alle {daily_time} ricevi le migliori offerte
-<b>andata/ritorno</b> con soggiorni di {min_nights}-{max_nights} notti,
+<b>andata/ritorno</b> con soggiorni di {min_nights}-{max_nights} notti in
+Europa ({min_nights_extra}-{max_nights_extra} extra-Europa),
 <b>solo voli diretti</b>: {n_europa} verso l'Europa e {n_extra} extra-Europa,
 più {multi_top_n} viaggi a tappe. I {n_extra} posti extra-Europa sono
 riservati — senza, il lungo raggio non entrerebbe mai in classifica perché
@@ -331,8 +332,10 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         intl_origins=", ".join(prefs.intl_origins),
         default_origins=", ".join(config.origins),
         default_intl=", ".join(config.intl_origins),
-        min_nights=config.min_trip_nights,
-        max_nights=config.max_trip_nights,
+        min_nights=config.min_trip_nights_europe,
+        max_nights=config.max_trip_nights_europe,
+        min_nights_extra=config.min_trip_nights,
+        max_nights_extra=config.max_trip_nights,
         n_europa=config.top_n - config.top_n_extra,
         n_extra=config.top_n_extra,
         multi_top_n=config.multi_top_n,

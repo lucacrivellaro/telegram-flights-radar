@@ -153,6 +153,19 @@ class DealEngine:
             max_api_calls=cfg.multi_max_api_calls,
         )
 
+    def _fits_trip_nights(self, offer: Offer) -> bool:
+        """Le notti dell'Europa hanno una finestra più stretta di quella
+        extra-Europa: la query API usa già quella larga, qui si restringe."""
+        if offer.nights is None:
+            return True
+        if is_short_haul(offer.destination):
+            return (
+                self.config.min_trip_nights_europe
+                <= offer.nights
+                <= self.config.max_trip_nights_europe
+            )
+        return self.config.min_trip_nights <= offer.nights <= self.config.max_trip_nights
+
     def fetch_offers(
         self,
         origins: list[str],
@@ -190,19 +203,21 @@ class DealEngine:
         for client in self._clients():
             for origin in origins:
                 try:
-                    offers.extend(
-                        client.search_round_trip(
-                            origin,
-                            date_from,
-                            date_to,
-                            self.config.min_trip_nights,
-                            self.config.max_trip_nights,
-                        )
+                    trovate = client.search_round_trip(
+                        origin,
+                        date_from,
+                        date_to,
+                        self.config.min_trip_nights,
+                        self.config.max_trip_nights,
                     )
                 except Exception as exc:  # noqa: BLE001
                     msg = f"{client.name} da {origin} (A/R): {exc}"
                     logger.error("Ricerca fallita: %s", msg)
                     errors.append((origin, msg))
+                    continue
+                # la ricerca sopra usa la finestra larga (extra-Europa): le
+                # destinazioni corto raggio hanno la loro, più stretta
+                offers.extend(o for o in trovate if self._fits_trip_nights(o))
 
         # Le tariffe cached sul lungo raggio sono sempre con scalo: se i posti
         # extra-Europa devono essere diretti serve una ricerca dedicata, o

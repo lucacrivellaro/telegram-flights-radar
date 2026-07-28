@@ -102,7 +102,8 @@ raggio, default false),
 `MULTI_ENABLED/TOP_N/MIN_STOPS/MAX_STOPS/MIN_STAY_NIGHTS/MAX_STAY_NIGHTS/`
 `MAX_TRIP_DAYS/DIRECT_ONLY/EXTRA_EUROPE_ONLY/BEAM_WIDTH/CANDIDATES/`
 `MAX_API_CALLS` (multitratta),
-`MIN/MAX_TRIP_NIGHTS` (range soggiorno A/R, default 3-10),
+`MIN/MAX_TRIP_NIGHTS` (range soggiorno A/R extra-Europa, default 3-10) e
+`MIN/MAX_TRIP_NIGHTS_EUROPE` (range Europa, più stretto, default 3-5),
 `DISCOUNT_THRESHOLD_PCT`, `MIN_HISTORY_SAMPLES`, `TOP_N`,
 `RESEND_COOLDOWN_DAYS`, `DAILY_TIME`, `TIMEZONE`, `DB_PATH`.
 Tutte documentate con commenti in `.env.example`.

@@ -37,8 +37,13 @@ class Config:
     # alta perché vale solo sull'extra-Europa e solo su voli DIRETTI: sotto i
     # 550€ le uniche tariffe intercontinentali sono quelle con scalo
     threshold_extra_rt: float = 900.0
+    # range notti A/R extra-Europa (l'Europa ha il suo, più stretto, sotto)
     min_trip_nights: int = 3
     max_trip_nights: int = 10
+    # range notti A/R Europa: più stretto dell'extra-Europa, un weekend/settimana
+    # corta è la norma sul corto raggio
+    min_trip_nights_europe: int = 3
+    max_trip_nights_europe: int = 5
     discount_pct: float = 30.0
     min_history_samples: int = 5
     top_n: int = 8
@@ -104,6 +109,8 @@ class Config:
             threshold_extra_rt=float(os.getenv("PRICE_THRESHOLD_EXTRA_RT", "900")),
             min_trip_nights=int(os.getenv("MIN_TRIP_NIGHTS", "3")),
             max_trip_nights=int(os.getenv("MAX_TRIP_NIGHTS", "10")),
+            min_trip_nights_europe=int(os.getenv("MIN_TRIP_NIGHTS_EUROPE", "3")),
+            max_trip_nights_europe=int(os.getenv("MAX_TRIP_NIGHTS_EUROPE", "5")),
             discount_pct=float(os.getenv("DISCOUNT_THRESHOLD_PCT", "30")),
             min_history_samples=int(os.getenv("MIN_HISTORY_SAMPLES", "5")),
             top_n=int(os.getenv("TOP_N", "8")),
