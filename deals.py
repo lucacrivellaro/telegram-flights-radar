@@ -144,6 +144,7 @@ class DealEngine:
             min_stops=cfg.multi_min_stops,
             max_stops=cfg.multi_max_stops,
             min_stay=cfg.multi_min_stay,
+            required_min_stay=cfg.multi_required_min_stay,
             max_trip_days=cfg.multi_max_trip_days,
             min_trip_days=cfg.multi_min_trip_days,
             beam_width=cfg.multi_beam_width,

@@ -64,7 +64,10 @@ class Config:
     # notti minime per tappa; non c'è un massimo per tappa, la durata di una
     # sosta è limitata solo dai giorni totali del viaggio
     multi_min_stay: int = 2
-    multi_max_trip_days: int = 20
+    # sulla tappa obbligatoria (se richiesta con /tappe) la sosta minima è più
+    # lunga: chi impone una città vuole viverla, non solo attraversarla
+    multi_required_min_stay: int = 4
+    multi_max_trip_days: int = 15
     # durata minima: senza, uscivano Milano→Bali→Singapore→Milano in 4 giorni,
     # con ~48h di volo su 4. Un intercontinentale a tappe ha senso solo se il
     # tempo a terra supera quello in aria
@@ -123,7 +126,10 @@ class Config:
             multi_min_stops=int(os.getenv("MULTI_MIN_STOPS", "2")),
             multi_max_stops=int(os.getenv("MULTI_MAX_STOPS", "4")),
             multi_min_stay=int(os.getenv("MULTI_MIN_STAY_NIGHTS", "2")),
-            multi_max_trip_days=int(os.getenv("MULTI_MAX_TRIP_DAYS", "20")),
+            multi_required_min_stay=int(
+                os.getenv("MULTI_REQUIRED_MIN_STAY_NIGHTS", "4")
+            ),
+            multi_max_trip_days=int(os.getenv("MULTI_MAX_TRIP_DAYS", "15")),
             multi_min_trip_days=int(os.getenv("MULTI_MIN_TRIP_DAYS", "10")),
             multi_direct_only=_bool(os.getenv("MULTI_DIRECT_ONLY", "false")),
             multi_extra_europe_only=_bool(

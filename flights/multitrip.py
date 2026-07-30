@@ -60,7 +60,8 @@ class MultiTripBuilder:
         min_stops: int = 2,
         max_stops: int = 4,
         min_stay: int = 2,
-        max_trip_days: int = 20,
+        required_min_stay: int = 4,
+        max_trip_days: int = 15,
         min_trip_days: int = 0,
         beam_width: int = 4,
         candidates: int = 6,
@@ -74,6 +75,7 @@ class MultiTripBuilder:
         self.min_stops = max(1, min_stops)
         self.max_stops = max(self.min_stops, max_stops)
         self.min_stay = min_stay
+        self.required_min_stay = required_min_stay
         self.max_trip_days = max_trip_days
         self.min_trip_days = min_trip_days
         self.beam_width = beam_width
@@ -263,11 +265,23 @@ class MultiTripBuilder:
             return False
         return _is_new_place(dest, visited, home)
 
-    def _stay_window(self, state: _State, closing: bool) -> tuple[date, date]:
+    def _stay_window(
+        self,
+        state: _State,
+        closing: bool,
+        required: list[str] | tuple[str, ...] = (),
+    ) -> tuple[date, date]:
         """Finestra di ripartenza da una tappa: sosta min-max notti, senza
-        sforare il tetto di giorni totali (lasciando spazio al rientro)."""
+        sforare il tetto di giorni totali (lasciando spazio al rientro).
+
+        Sulla tappa obbligatoria (sempre la prima, imposta da `_first_hops`)
+        la sosta minima è `required_min_stay`, più lunga di quella delle
+        altre tappe: chi la richiede vuole starci, non solo passarci."""
         first = state.legs[0].depart_date
-        start = state.arrival + timedelta(days=self.min_stay)
+        min_stay = self.min_stay
+        if required and len(state.legs) == 1 and same_metro(required[0], state.city):
+            min_stay = max(min_stay, self.required_min_stay)
+        start = state.arrival + timedelta(days=min_stay)
         if closing:
             end = first + timedelta(days=self.max_trip_days)
             if self.min_trip_days:
@@ -410,7 +424,7 @@ class MultiTripBuilder:
         jobs: list[tuple] = []
         owners: dict[int, _State] = {}
         for state in states:
-            win = self._stay_window(state, closing=False)
+            win = self._stay_window(state, closing=False, required=required)
             if win[0] > win[1]:
                 continue
             # nessun vincolo da propagare: le tappe obbligatorie valgono in OR
@@ -466,7 +480,7 @@ class MultiTripBuilder:
         for state in states:
             if not _satisfies(state, required):
                 continue  # non tocca nessuna tappa obbligatoria
-            win = self._stay_window(state, closing=True)
+            win = self._stay_window(state, closing=True, required=required)
             if win[0] > win[1]:
                 continue
             jobs.append((len(jobs), state.city, home, win[0], win[1]))
