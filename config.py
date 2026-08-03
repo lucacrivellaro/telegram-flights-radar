@@ -76,6 +76,10 @@ class Config:
     # (VCE: 0 itinerari con i diretti, 3 ammettendo gli scali)
     multi_direct_only: bool = False
     multi_extra_europe_only: bool = True
+    # tetto sulla singola tratta (non sull'itinerario): niente più di uno
+    # scalo e niente oltre le 24h porta-a-porta per ogni tappa
+    multi_max_leg_stops: int = 1
+    multi_max_leg_duration_hours: int = 24
     multi_beam_width: int = 4
     multi_candidates: int = 6
     multi_max_api_calls: int = 250
@@ -134,6 +138,10 @@ class Config:
             multi_direct_only=_bool(os.getenv("MULTI_DIRECT_ONLY", "false")),
             multi_extra_europe_only=_bool(
                 os.getenv("MULTI_EXTRA_EUROPE_ONLY", "true")
+            ),
+            multi_max_leg_stops=int(os.getenv("MULTI_MAX_LEG_STOPS", "1")),
+            multi_max_leg_duration_hours=int(
+                os.getenv("MULTI_MAX_LEG_DURATION_HOURS", "24")
             ),
             multi_beam_width=int(os.getenv("MULTI_BEAM_WIDTH", "4")),
             multi_candidates=int(os.getenv("MULTI_CANDIDATES", "6")),

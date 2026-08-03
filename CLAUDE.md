@@ -101,7 +101,7 @@ lungo raggio),
 raggio, default false),
 `MULTI_ENABLED/TOP_N/MIN_STOPS/MAX_STOPS/MIN_STAY_NIGHTS/MAX_STAY_NIGHTS/`
 `MAX_TRIP_DAYS/DIRECT_ONLY/EXTRA_EUROPE_ONLY/BEAM_WIDTH/CANDIDATES/`
-`MAX_API_CALLS` (multitratta),
+`MAX_API_CALLS/MAX_LEG_STOPS/MAX_LEG_DURATION_HOURS` (multitratta),
 `MIN/MAX_TRIP_NIGHTS` (range soggiorno A/R extra-Europa, default 3-10) e
 `MIN/MAX_TRIP_NIGHTS_EUROPE` (range Europa, più stretto, default 3-5),
 `DISCOUNT_THRESHOLD_PCT`, `MIN_HISTORY_SAMPLES`, `TOP_N`,
@@ -206,11 +206,16 @@ ne passavano 13). Ora una sosta è limitata solo dai giorni totali. In cambio
 `_stay_window(closing=False)` deve **riservare** `(tappe_mancanti + 1) *
 min_stay` giorni: con finestre larghe una prima sosta lunghissima si mangiava
 il budget e l'anello non si chiudeva più.
-- Un tetto sulla durata della singola tratta **non è applicabile**: oggi tutti
-gli itinerari costruiti hanno almeno una tratta oltre le 24h (viste fino a
-50h10 con 3 scali), quindi filtrarle svuoterebbe la sezione. Per questo il
-messaggio mostra durata e scali di ogni tratta: il problema si vede invece di
-restare nascosto dietro un prezzo basso.
+- **Tetto sulla singola tratta** (`multi_max_leg_stops=1`,
+`multi_max_leg_duration_hours=24`, 2026-08-03): scarta in `_best_leg()` le
+partenze con più di uno scalo o oltre 24h porta-a-porta, *prima* che entrino
+nella beam search (non un filtro a posteriori sui risultati finali). Una
+tratta pensata inizialmente come "non applicabile" (si vedevano tratte fino a
+50h10 con 3 scali) perché il tetto sembrava svuotare la sezione: misurato di
+nuovo dopo averlo introdotto, non è così — la ricerca semplicemente scarta
+prima le tratte peggiori e ne trova altre nella stessa finestra (BGY 5
+itinerari, MXP 1, VCE 0 su una run di prova). Il messaggio continua a mostrare
+durata e scali di ogni tratta per trasparenza.
 - `airports.same_metro()` evita tappe a due passi da casa (MIL partendo da BGY):
 il confronto sui nomi non basta, MIL="Milano" ma MXP="Milan". Serve anche a
 soddisfare una tappa obbligatoria "NYC" con un itinerario via JFK.

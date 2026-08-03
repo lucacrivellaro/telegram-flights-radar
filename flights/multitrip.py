@@ -67,6 +67,8 @@ class MultiTripBuilder:
         candidates: int = 6,
         direct_only: bool = True,
         extra_europe_only: bool = True,
+        max_leg_stops: int = 1,
+        max_leg_duration_minutes: int = 24 * 60,
         max_api_calls: int = 150,
         max_workers: int = 6,
     ):
@@ -82,6 +84,10 @@ class MultiTripBuilder:
         self.candidates = candidates
         self.direct_only = direct_only
         self.extra_europe_only = extra_europe_only
+        # tetto sulla singola tratta (non sull'itinerario): scali e durata
+        # porta-a-porta di *una* tappa, non il totale del viaggio
+        self.max_leg_stops = max_leg_stops
+        self.max_leg_duration_minutes = max_leg_duration_minutes
         self.max_api_calls = max_api_calls
         self.max_workers = max_workers
         # tetto effettivo di chiamate: `build()` lo scala col numero di tappe
@@ -205,7 +211,10 @@ class MultiTripBuilder:
     def _best_leg(
         self, origin: str, dest: str, win_start: date, win_end: date, nights: int = 0
     ) -> Leg | None:
-        """La partenza più economica sulla rotta, con data nella finestra."""
+        """La partenza più economica sulla rotta, con data nella finestra e la
+        singola tratta entro il tetto di scali/durata (`max_leg_stops`,
+        `max_leg_duration_minutes`): una tratta senza durata nota non si può
+        verificare, quindi si scarta (parsing difensivo, non un'eccezione)."""
         if win_start > win_end:
             return None
         calendar = self._calendar(origin, dest, _months(win_start, win_end))
@@ -213,7 +222,13 @@ class MultiTripBuilder:
         for day, row in calendar.items():
             if not (win_start <= day <= win_end):
                 continue
-            if self.direct_only and int(row.get("transfers") or 0) > 0:
+            stops = int(row.get("transfers") or 0)
+            if self.direct_only and stops > 0:
+                continue
+            if stops > self.max_leg_stops:
+                continue
+            duration = row.get("duration")
+            if duration is None or duration > self.max_leg_duration_minutes:
                 continue
             if best_row is None or row["price"] < best_row["price"]:
                 best_day, best_row = day, row

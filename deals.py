@@ -151,6 +151,8 @@ class DealEngine:
             candidates=cfg.multi_candidates,
             direct_only=cfg.multi_direct_only,
             extra_europe_only=cfg.multi_extra_europe_only,
+            max_leg_stops=cfg.multi_max_leg_stops,
+            max_leg_duration_minutes=cfg.multi_max_leg_duration_hours * 60,
             max_api_calls=cfg.multi_max_api_calls,
         )
 
